@@ -25,7 +25,7 @@ import yaml
 sys.path.insert(0, '..')
 import clihelper
 
-_WAKE_INTERVAL = 1
+_WAKE_INTERVAL = 5
 _CONFIG = {clihelper._APPLICATION: {'wake_interval': _WAKE_INTERVAL},
            clihelper._DAEMON: {'user': 'root',
                                'group': 'wheel',
@@ -74,7 +74,7 @@ class BaseTests(unittest.TestCase):
 
     def _mock_options(self):
         mock_options = mock.Mock(spec=optparse.Values)
-        mock_options.foreground = False
+        mock_options.foreground = True
         mock_options.configuration = '/dev/null'
         return mock_options
 
@@ -255,17 +255,60 @@ class CLIHelperTests(BaseTests):
         self.assertRaises(OSError, clihelper._validate_config_file)
 
 
-class TestPassthruController(clihelper.Controller):
+class TestController(clihelper.Controller):
+
+    def __init__(self, options, arguments):
+        super(TestController, self).__init__(options, arguments)
+        self.shutdown_completed = False
+        self.slept = False
+        self._config[clihelper._APPLICATION]['wake_interval'] = 0
+
+    def _shutdown_complete(self):
+        super(TestController, self)._shutdown_complete()
+        self.shutdown_completed = True
+
+    def _process(self):
+        pass
+
+    def _loop(self):
+        self._process()
+        self._sleep()
+
+    def _set_state(self, state):
+        if state == self._STATE_SLEEPING:
+            self.slept = True
+        self._state = state
+
+
+class TestRunControllerTests(BaseTests):
+
+    def _setup(self):
+        self._setup_mock_daemon_context()
+        self._setup_mock_logging_config()
+        self._setup_mock_new_option_parser()
+
+    def test_run(self):
+        TestPassthruController.run = clihelper.Controller.run
+        clihelper.run(TestController)
+        print clihelper._CONTROLLER.slept
+        print clihelper._CONTROLLER.shutdown_completed
+        self.assertTrue(clihelper._CONTROLLER.slept and
+                        clihelper._CONTROLLER.shutdown_completed)
+
+
+class TestPassthruController(TestController):
 
     def __init__(self, options, arguments):
         super(TestPassthruController, self).__init__(options, arguments)
-        self.called = False
+        self._config[clihelper._APPLICATION]['wake_interval'] = 1
 
     def run(self):
+        self._logger.debug('In %r.run', self)
         self.called = True
+        self._set_state(self._STATE_RUNNING)
 
 
-class RunTests(BaseTests):
+class TestPassthruControllerTests(BaseTests):
 
     def _setup(self):
         self._setup_mock_daemon_context()
@@ -273,7 +316,6 @@ class RunTests(BaseTests):
         self._setup_mock_new_option_parser()
 
     def test_clihelper_run_foreground(self):
-        self._options.foreground = True
         clihelper.run(TestPassthruController)
         self.assertTrue(clihelper._CONTROLLER.called)
 
@@ -282,9 +324,24 @@ class RunTests(BaseTests):
             self.called = True
             raise KeyboardInterrupt
         TestPassthruController.run = run_keyboard_interrupt
-        self._options.foreground = True
         clihelper.run(TestPassthruController)
         self.assertTrue(clihelper._CONTROLLER.called)
+
+    def test_clihelper_on_sighup(self):
+        clihelper.run(TestPassthruController)
+        clihelper._CONTROLLER._on_sighup(0)
+        self.assertEqual(clihelper._CONTROLLER._state,
+                         clihelper.Controller._STATE_RUNNING)
+        self.assertTrue(clihelper._CONTROLLER.shutdown_completed)
+
+    def test_sleep(self):
+        clihelper.run(TestPassthruController)
+        controller = clihelper._CONTROLLER
+        controller._state = controller._STATE_RUNNING
+        controller._sleep()
+        self.assertTrue(controller.slept)
+
+
 
 class ControllerTests(BaseTests):
 
@@ -306,7 +363,6 @@ class ControllerTests(BaseTests):
     def test_set_state_invalid_option(self):
         self.assertRaises(ValueError, self._controller._set_state, -1)
 
-
     def test_get_application_config(self):
         self.assertEqual(self._controller._get_application_config(),
                          _CONFIG[clihelper._APPLICATION])
@@ -325,6 +381,37 @@ class ControllerTests(BaseTests):
     def test_get_wake_interval(self):
         self.assertEqual(self._controller._get_wake_interval(),
                          _CONFIG[clihelper._APPLICATION]['wake_interval'])
+
+    def test_process_not_implemented(self):
+        self.assertRaises(NotImplementedError, self._controller._process)
+
+    def test_on_sigusr1(self):
+        self.assertEqual(self._controller._config, _CONFIG)
+        _NEW_CONFIG = copy.deepcopy(_CONFIG)
+        _NEW_CONFIG['test_value'] = time.time()
+        self._mock_load_config.return_value = _NEW_CONFIG
+        self._controller._on_sigusr1(0)
+        self.assertEqual(self._controller._config, _NEW_CONFIG)
+        self._mock_load_config.return_value = _CONFIG
+
+    def test_reload_configuration(self):
+        self.assertEqual(self._controller._config, _CONFIG)
+        _NEW_CONFIG = copy.deepcopy(_CONFIG)
+        _NEW_CONFIG['test_value'] = time.time()
+        self._mock_load_config.return_value = _NEW_CONFIG
+        self._controller._reload_configuration()
+        self.assertEqual(self._controller._config, _NEW_CONFIG)
+        self._mock_load_config.return_value = _CONFIG
+
+    def test_wake_time(self):
+        expectation = int(time.time() + _WAKE_INTERVAL)
+        self.assertAlmostEqual(self._controller._wake_time(), expectation)
+
+    def test_shutdown_complete(self):
+        self._controller._set_state(self._controller._STATE_RUNNING)
+        self._controller._shutdown_complete()
+        self.assertEqual(self._controller._state, self._controller._STATE_IDLE)
+
 
 
 class NonePatchedTests(unittest.TestCase):

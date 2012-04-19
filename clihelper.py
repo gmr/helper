@@ -94,7 +94,7 @@ class Controller(object):
         return  self._get_application_config().get('wake_interval',
                                                    self._WAKE_INTERVAL)
 
-    def _loop(self):
+    def _loop(self):  #pragma: no cover
         """The process loop, loop until we are running no more."""
         # Loop while we are running
         while self.is_running:
@@ -131,7 +131,6 @@ class Controller(object):
         """Called when SIGTERM is received, override to implement."""
         self._logger.info('Received SIGTERM at frame %r', frame)
         self._shutdown()
-        self._shutdown_complete()
 
     def _on_sigusr1(self, _frame):
         """Called when SIGUSR1 is received. Reloads configuration and reruns
@@ -143,7 +142,7 @@ class Controller(object):
         self._logger.info('Received SIGUSR1, reloading configuration')
         self._reload_configuration()
 
-    def _on_sigusr2(self, frame):
+    def _on_sigusr2(self, frame):  #pragma: no cover
         """Called when SIGUSR2 is received, override to implement."""
         self._logger.info('Received SIGUSR2 at frame %r', frame)
 
@@ -176,6 +175,7 @@ class Controller(object):
         """
         if state not in [self._STATE_IDLE,
                          self._STATE_RUNNING,
+                         self._STATE_SLEEPING,
                          self._STATE_SHUTTING_DOWN]:
             raise ValueError('Invalid Runtime State')
 
@@ -185,7 +185,7 @@ class Controller(object):
         # Log the change
         self._logger.debug('Runtime state changed to %i', self._state)
 
-    def _setup(self):
+    def _setup(self):  #pragma: no cover
         """Override to provide any required setup steps."""
         pass
 
@@ -205,21 +205,30 @@ class Controller(object):
 
         """
         # Calculate when the application should wake
-        wake_interval =  self._get_wake_interval()
-        end_time = time.time() + wake_interval
-        self._logger.debug('Sleeping %i seconds, waking at %.2f',
-                           wake_interval, end_time)
+        wake_time = self._wake_time()
 
         # Set the state to sleeping
         self._set_state(self._STATE_SLEEPING)
 
         # While we've not exceeded the end_time and we're still running
-        while end_time > time.time() and self.is_running:
+        while wake_time > time.time() and self.is_running:
             time.sleep(self._SLEEP_UNIT)
 
         # Set the state back to running
         self._logger.debug('Waking')
         self._set_state(self._STATE_RUNNING)
+
+    def _wake_time(self):
+        """Calculate the wakeup time for sleeping
+
+        :rtype: int
+
+        """
+        wake_interval =  self._get_wake_interval()
+        end_time = int(time.time() + wake_interval)
+        self._logger.debug('Sleeping %i seconds, waking at %.2f',
+                           wake_interval, end_time)
+        return end_time
 
     @property
     def is_running(self):
@@ -259,6 +268,9 @@ class Controller(object):
         # Wait until shutdown is complete
         while self.is_shutting_down:
             self._sleep()
+
+        # Signal that shutdown is complete
+        self._shutdown_complete()
 
 
 def _cli_options(option_callback):
