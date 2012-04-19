@@ -25,7 +25,7 @@ import yaml
 sys.path.insert(0, '..')
 import clihelper
 
-_WAKE_INTERVAL = 5
+_WAKE_INTERVAL = 1
 _CONFIG = {clihelper._APPLICATION: {'wake_interval': _WAKE_INTERVAL},
            clihelper._DAEMON: {'user': 'root',
                                'group': 'wheel',
@@ -34,7 +34,7 @@ _CONFIG = {clihelper._APPLICATION: {'wake_interval': _WAKE_INTERVAL},
                                 'Handlers': [], 'Loggers': []}}
 
 
-class CLIHelperTests(unittest.TestCase):
+class BaseTests(unittest.TestCase):
 
     def _setup_mock_load_config(self):
         self._mock_load_config = mock.Mock(return_value=_CONFIG)
@@ -75,22 +75,42 @@ class CLIHelperTests(unittest.TestCase):
     def _mock_options(self):
         mock_options = mock.Mock(spec=optparse.Values)
         mock_options.foreground = False
-        mock_options.configuration = 'TEST'
+        mock_options.configuration = '/dev/null'
         return mock_options
 
     def setUp(self):
-        clihelper._CONFIG_FILE = '/dev/null'
+        clihelper.set_configuration_file('/dev/null')
         self._options = self._mock_options()
-        self._setup_mock_daemon_context()
         self._setup_mock_load_config()
-        self._setup_mock_logging_config()
-        self._setup_mock_new_option_parser()
+        self._setup()
         self._controller = clihelper.Controller(self._options, list())
         clihelper.set_controller(self._controller)
 
     def tearDown(self):
         clihelper._CONFIG_FILE = None
         del self._controller
+
+    def _setup(self):
+        pass
+
+
+class CLIHelperTests(BaseTests):
+
+    def _setup(self):
+        self._setup_mock_daemon_context()
+        self._setup_mock_logging_config()
+        self._setup_mock_new_option_parser()
+
+    def test_cli_options(self):
+        clihelper.setup('Foo', 'Bar', '1.0')
+        options, arguments = clihelper._cli_options(None)
+        self.assertIsInstance(options, optparse.Values)
+
+    def test_cli_options_with_callback(self):
+        callback = mock.Mock()
+        clihelper.setup('Foo', 'Bar', '1.0')
+        clihelper._cli_options(callback)
+        self.assertTrue(callback.called)
 
     def test_get_configuration(self):
         self.assertEqual(clihelper._get_configuration(), _CONFIG)
@@ -110,19 +130,6 @@ class CLIHelperTests(unittest.TestCase):
         self.assertEqual(clihelper._get_logging_config(),
                          _CONFIG[clihelper._LOGGING])
 
-    def test_get_pidfile_path(self):
-        print _CONFIG
-        self.assertEqual(clihelper._get_pidfile_path(),
-                         _CONFIG[clihelper._DAEMON]['pidfile'])
-
-    def test_get_default_pidfile(self):
-        _BAD_CONFIG = copy.deepcopy(_CONFIG)
-        del _BAD_CONFIG[clihelper._DAEMON]['pidfile']
-        self._mock_load_config.return_value = _BAD_CONFIG
-        self.assertEqual(clihelper._get_pidfile_path(),
-                         clihelper._PIDFILE % clihelper._APPNAME)
-        self._mock_load_config.return_value = _CONFIG
-
     def test_get_gid(self):
         value = 'wheel'
         self.assertEqual(clihelper._get_gid(value), grp.getgrnam(value).gr_gid)
@@ -131,16 +138,45 @@ class CLIHelperTests(unittest.TestCase):
         context = clihelper._get_daemon_context()
         self.assertIsInstance(context, daemon.DaemonContext)
 
-    def test_cli_options(self):
-        clihelper.setup('Foo', 'Bar', '1.0')
-        options, arguments = clihelper._cli_options(None)
-        self.assertIsInstance(options, optparse.Values)
+    def test_get_pidfile_path(self):
+        print _CONFIG
+        self.assertEqual(clihelper._get_pidfile_path(),
+                         _CONFIG[clihelper._DAEMON]['pidfile'])
 
-    def test_cli_options_with_callback(self):
-        callback = mock.Mock()
-        clihelper.setup('Foo', 'Bar', '1.0')
-        clihelper._cli_options(callback)
-        self.assertTrue(callback.called)
+    def test_get_pidfile_default(self):
+        _BAD_CONFIG = copy.deepcopy(_CONFIG)
+        del _BAD_CONFIG[clihelper._DAEMON]['pidfile']
+        self._mock_load_config.return_value = _BAD_CONFIG
+        self.assertEqual(clihelper._get_pidfile_path(),
+                         clihelper._PIDFILE % clihelper._APPNAME)
+        self._mock_load_config.return_value = _CONFIG
+
+    def test_get_uid(self):
+        self.assertEqual(clihelper._get_uid('root'), 0)
+
+    def test_on_sighup(self):
+        frame = time.time()
+        with mock.patch.object(self._controller, '_on_sighup') as sighup:
+            clihelper._on_sighup(signal.SIGHUP, frame)
+            sighup.assert_called_with(frame)
+
+    def test_on_sigterm(self):
+        frame = time.time()
+        with mock.patch.object(self._controller, '_on_sigterm') as sigterm:
+            clihelper._on_sigterm(signal.SIGTERM, frame)
+            sigterm.assert_called_with(frame)
+
+    def test_on_sigusr1(self):
+        frame = time.time()
+        with mock.patch.object(self._controller, '_on_sigusr1') as sigusr1:
+            clihelper._on_sigusr1(signal.SIGUSR1, frame)
+            sigusr1.assert_called_with(frame)
+
+    def test_on_sigusr2(self):
+        frame = time.time()
+        with mock.patch.object(self._controller, '_on_sigusr2') as sigusr2:
+            clihelper._on_sigusr2(signal.SIGUSR2, frame)
+            sigusr2.assert_called_with(frame)
 
     def test_parse_yaml(self):
         content = yaml.dump(_CONFIG)
@@ -156,10 +192,6 @@ class CLIHelperTests(unittest.TestCase):
         result = clihelper._read_config_file()
         os.unlink(filename)
         self.assertEqual(result, content)
-
-
-    def test_get_uid(self):
-        self.assertEqual(clihelper._get_uid('root'), 0)
 
     def test_set_appname(self):
         clihelper.set_appname(__name__)
@@ -194,10 +226,15 @@ class CLIHelperTests(unittest.TestCase):
         clihelper.setup(None, value, None)
         self.assertEqual(clihelper._DESCRIPTION, value)
 
+    def test_setup_logging(self):
+        clihelper._setup_logging(False)
+        self.assertTrue(self._mock_logging_config.called)
+
     def test_setup_version(self):
         value = 'TestVersion:%.2f' % time.time()
         clihelper.setup(None, None, value)
         self.assertEqual(clihelper._VERSION, value)
+        clihelper._CONFIG_FILE = '/dev/null'
 
     def test_validate_config_file(self):
         clihelper._CONFIG_FILE = '/tmp/clihelper-test-%.2f' % time.time()
@@ -216,68 +253,78 @@ class CLIHelperTests(unittest.TestCase):
     def test_validate_config_file_does_not_exist(self):
         clihelper._CONFIG_FILE = '/tmp/clihelper-test-%.2f' % time.time()
         self.assertRaises(OSError, clihelper._validate_config_file)
-        clihelper._CONFIG_FILE = '/dev/null'
 
-    def test_setup_logging(self):
-        clihelper._setup_logging(False)
-        self.assertTrue(self._mock_logging_config.called)
 
-    def test_on_sighup(self):
-        frame = time.time()
-        with mock.patch.object(self._controller, '_on_sighup') as sighup:
-            clihelper._on_sighup(signal.SIGHUP, frame)
-            sighup.assert_called_with(frame)
+class TestPassthruController(clihelper.Controller):
 
-    def test_on_sigterm(self):
-        frame = time.time()
-        with mock.patch.object(self._controller, '_on_sigterm') as sigterm:
-            clihelper._on_sigterm(signal.SIGTERM, frame)
-            sigterm.assert_called_with(frame)
+    def __init__(self, options, arguments):
+        super(TestPassthruController, self).__init__(options, arguments)
+        self.called = False
 
-    def test_on_sigusr1(self):
-        frame = time.time()
-        with mock.patch.object(self._controller, '_on_sigusr1') as sigusr1:
-            clihelper._on_sigusr1(signal.SIGUSR1, frame)
-            sigusr1.assert_called_with(frame)
+    def run(self):
+        self.called = True
 
-    def test_on_sigusr2(self):
-        frame = time.time()
-        with mock.patch.object(self._controller, '_on_sigusr2') as sigusr2:
-            clihelper._on_sigusr2(signal.SIGUSR2, frame)
-            sigusr2.assert_called_with(frame)
 
-    def test_controller_new_instance_has_idle_state(self):
+class RunTests(BaseTests):
+
+    def _setup(self):
+        self._setup_mock_daemon_context()
+        self._setup_mock_logging_config()
+        self._setup_mock_new_option_parser()
+
+    def test_clihelper_run_foreground(self):
+        self._options.foreground = True
+        clihelper.run(TestPassthruController)
+        self.assertTrue(clihelper._CONTROLLER.called)
+
+    def test_clihelper_run_foreground_interrupt(self):
+        def run_keyboard_interrupt(self):
+            self.called = True
+            raise KeyboardInterrupt
+        TestPassthruController.run = run_keyboard_interrupt
+        self._options.foreground = True
+        clihelper.run(TestPassthruController)
+        self.assertTrue(clihelper._CONTROLLER.called)
+
+class ControllerTests(BaseTests):
+
+    def _setup(self):
+        self._setup_mock_daemon_context()
+        self._setup_mock_logging_config()
+        self._setup_mock_new_option_parser()
+
+    def test_new_instance_has_idle_state(self):
         self.assertEqual(self._controller._state,
                          clihelper.Controller._STATE_IDLE)
 
-    def test_controller_new_instance_is_not_running(self):
+    def test_new_instance_is_not_running(self):
         self.assertFalse(self._controller.is_running)
 
-    def test_controller_new_instance_is_not_shutting_down(self):
+    def test_new_instance_is_not_shutting_down(self):
         self.assertFalse(self._controller.is_shutting_down)
 
-    def test_controller_set_state_invalid_option(self):
+    def test_set_state_invalid_option(self):
         self.assertRaises(ValueError, self._controller._set_state, -1)
 
 
-    def test_controller_get_application_config(self):
+    def test_get_application_config(self):
         self.assertEqual(self._controller._get_application_config(),
                          _CONFIG[clihelper._APPLICATION])
 
-    def test_controller_get_config_return_value(self):
+    def test_get_config_return_value(self):
         key = 'wake_interval'
         self.assertEqual(self._controller._get_config(key),
-                          _CONFIG[clihelper._APPLICATION][key])
+                         _CONFIG[clihelper._APPLICATION][key])
 
-    def test_controller_get_config_calls_get_configuration(self):
+    def test_get_config_calls_get_configuration(self):
         with mock.patch('clihelper._get_configuration') as mock_function:
             mock_function.return_value = _CONFIG
             self._controller._get_config('wake_interval')
             self.assertTrue(mock_function.called)
 
-    def test_controller_get_wake_interval(self):
+    def test_get_wake_interval(self):
         self.assertEqual(self._controller._get_wake_interval(),
-                          _CONFIG[clihelper._APPLICATION]['wake_interval'])
+                         _CONFIG[clihelper._APPLICATION]['wake_interval'])
 
 
 class NonePatchedTests(unittest.TestCase):
