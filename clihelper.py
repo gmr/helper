@@ -221,7 +221,6 @@ class Controller(object):
         self._logger.debug('Waking')
         self._set_state(self._STATE_RUNNING)
 
-
     @property
     def is_running(self):
         """Returns True if the controller is running
@@ -418,6 +417,7 @@ def _load_config():
     # Return the parsed content
     return _parse_yaml(content)
 
+
 def _new_daemon_context():
     """Return a new daemon context.
 
@@ -485,6 +485,7 @@ def _parse_yaml(content):
     """
     return yaml.load(content)
 
+
 def _read_config_file():
     """Return the contents of the file specified in _CONFIG_FILE.
 
@@ -493,6 +494,7 @@ def _read_config_file():
     """
     with open(_CONFIG_FILE, 'r') as handle:
         return handle.read()
+
 
 def _setup_logging(debug):
     """Setup the logging configuration.
@@ -516,9 +518,10 @@ def _validate_config_file():
         raise ValueError('Missing internal reference to configuration file')
 
     if not os.path.exists(_CONFIG_FILE):
-        raise OSError('"%s" does not exist')
+        raise OSError('"%s" does not exist' % _CONFIG_FILE)
 
     return True
+
 
 def run(controller, option_callback=None):
     """Called by the implementing application to run the application.
@@ -544,9 +547,8 @@ def run(controller, option_callback=None):
         except KeyboardInterrupt:
             logging.info('CTRL-C caught, shutting down')
             process._on_sigterm(None)
-            while process.is_running:
-                time.sleep(1)
             logging.info('Shutdown')
+            return
 
     # Run the process with the daemon context
     with _get_daemon_context():
