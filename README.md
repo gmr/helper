@@ -39,8 +39,8 @@ See the configuration file example later in this document for more information.
 
     def main():
 
-        cli.setup('myapp', 'myapp does stuff', '1.0.0')
-        cli.run(MyController)
+        clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
+        clihelper.run(MyController)
 
 ## Adding command line options
 
