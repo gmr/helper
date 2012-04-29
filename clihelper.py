@@ -5,12 +5,15 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.0.1'
+__version__ = '1.1.0'
 
 import daemon
 import grp
 import logging
-import logging_config
+try:
+    from logging.config import dictConfig
+except ImportError:
+    from logutils.dictconfig import dictConfig
 import optparse
 import os
 from daemon import pidfile
@@ -29,6 +32,8 @@ _CONFIG_FILE = None
 _CONTROLLER = None
 _DESCRIPTION = 'Command Line Daemon'
 _PIDFILE = '/var/run/%s.pid'
+
+logger = logging.getLogger(__name__)
 
 
 class Controller(object):
@@ -54,8 +59,6 @@ class Controller(object):
         :param list arguments: Left over positional cli arguments
 
         """
-        self._logger = logging.getLogger(_APPNAME)
-
         # Default state
         self._set_state(self._STATE_IDLE)
 
@@ -108,11 +111,11 @@ class Controller(object):
                 self._sleep()
             except KeyboardInterrupt:
                 self._running = False
-                self._logger.info('CTRL-C received, shutting down')
+                logger.info('CTRL-C received, shutting down')
                 break
             except SystemExit:
                 self._running = False
-                self._logger.info('Exit signal received, shutting down')
+                logger.info('Exit signal received, shutting down')
                 break
 
     def _on_sighup(self, _frame):
@@ -122,7 +125,7 @@ class Controller(object):
         :param frame _frame: The stack frame when called
 
         """
-        self._logger.info('Received SIGHUP, restarting internal state')
+        logger.info('Received SIGHUP, restarting internal state')
         self._shutdown()
         self._shutdown_complete()
         self._reload_configuration()
@@ -130,7 +133,7 @@ class Controller(object):
 
     def _on_sigterm(self, frame):
         """Called when SIGTERM is received, override to implement."""
-        self._logger.info('Received SIGTERM at frame %r', frame)
+        logger.info('Received SIGTERM at frame %r', frame)
         self._shutdown()
 
     def _on_sigusr1(self, _frame):
@@ -140,12 +143,12 @@ class Controller(object):
         :param frame _frame: The stack frame when called
 
         """
-        self._logger.info('Received SIGUSR1, reloading configuration')
+        logger.info('Received SIGUSR1, reloading configuration')
         self._reload_configuration()
 
     def _on_sigusr2(self, frame):  #pragma: no cover
         """Called when SIGUSR2 is received, override to implement."""
-        self._logger.info('Received SIGUSR2 at frame %r', frame)
+        logger.info('Received SIGUSR2 at frame %r', frame)
 
     def _process(self):
         """To be implemented by the extending class. Is called after every sleep
@@ -184,7 +187,7 @@ class Controller(object):
         self._state = state
 
         # Log the change
-        self._logger.debug('Runtime state changed to %i', self._state)
+        logger.debug('Runtime state changed to %i', self._state)
 
     def _setup(self):  #pragma: no cover
         """Override to provide any required setup steps."""
@@ -192,12 +195,12 @@ class Controller(object):
 
     def _shutdown(self):
         """Override to implement shutdown steps."""
-        self._logger.debug('Shutting down')
+        logger.debug('Shutting down')
         self._set_state(self._STATE_SHUTTING_DOWN)
 
     def _shutdown_complete(self):
         """Sets the state back to idle when shutdown steps are complete."""
-        self._logger.debug('Shutdown complete')
+        logger.debug('Shutdown complete')
         self._set_state(self._STATE_IDLE)
 
     def _sleep(self):
@@ -216,7 +219,7 @@ class Controller(object):
             time.sleep(self._SLEEP_UNIT)
 
         # Set the state back to running
-        self._logger.debug('Waking')
+        logger.debug('Waking')
         self._set_state(self._STATE_RUNNING)
 
     def _wake_time(self):
@@ -227,7 +230,7 @@ class Controller(object):
         """
         wake_interval =  self._get_wake_interval()
         end_time = int(time.time() + wake_interval)
-        self._logger.debug('Sleeping %i seconds, waking at %.2f',
+        logger.debug('Sleeping %i seconds, waking at %.2f',
                            wake_interval, end_time)
         return end_time
 
@@ -255,7 +258,7 @@ class Controller(object):
 
         """
         # Call this now because the app may be in a new process
-        self._logger.info('Process running')
+        logger.info('Process running')
 
         # Call the _setup method
         self._setup()
@@ -385,7 +388,7 @@ def _get_gid(group):
 
 
 def _get_logging_config():
-    """Return the configuration data for the logging-config.Logger object
+    """Return the configuration data for dictConfig
 
     :rtype: dict
 
@@ -509,15 +512,71 @@ def _read_config_file():
         return handle.read()
 
 
-def _setup_logging(debug):
-    """Setup the logging configuration.
+def _remove_debug_only_from_handlers(logging_config):
+    """Iterate through each handler removing the invalid dictConfig key of
+    debug_only.
 
-    :param bool debug: Setup logging in debug mode or not
+    :param dict logging_config: The logging configuration for dictConfig
 
     """
-    # Get the logging config
-    config = logging_config.Logging(_get_logging_config(), debug)
-    config.setup()
+    for handler in logging_config['handlers']:
+        if 'debug_only' in logging_config['handlers'][handler]:
+            del logging_config['handlers'][handler]['debug_only']
+
+
+def _remove_debug_only_handlers(logging_config):
+    """Remove any handlers with an attribute of debug_only that is True and
+    remove the references to said handlers from any loggers that are referencing
+    them.
+
+    :param dict logging_config: The logging configuration for dictConfig
+
+    """
+    remove = list()
+    for handler in logging_config['handlers']:
+        if logging_config['handlers'][handler].get('debug_only'):
+            remove.append(handler)
+
+    # Iterate through the handlers to remove and remove them
+    for handler in remove:
+        del logging_config['handlers'][handler]
+        _remove_handler_from_loggers(logging_config['loggers'], handler)
+
+
+def _remove_handler_from_loggers(loggers, handler):
+    """Remove any reference of the specified handler from the loggers in the
+    logging_config dictionary.
+
+    :param dict loggers: The loggers section of the logging configuration
+    :param str handler: The name of the handler to remove references to
+
+    """
+    for logger in loggers:
+        try:
+            loggers[logger]['handlers'].remove(handler)
+        except ValueError:
+            pass
+
+
+def _setup_logging(debug):
+    """Setup the logging configuration and assign the logger. If debug is False
+    strip any handlers and their references from the configuration.
+
+    :param bool debug: The app is in debug mode
+
+    """
+    # Get the configuration
+    logging_config = _get_logging_config()
+
+    # Process debug only handlers
+    if not debug:
+        _remove_debug_only_handlers(logging_config)
+
+    # Remove any references to debug_only
+    _remove_debug_only_from_handlers(logging_config)
+
+    # Run the Dictionary Configuration
+    dictConfig(logging_config)
 
 
 def _validate_config_file():

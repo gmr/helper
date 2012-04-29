@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='clihelper',
-      version='1.0.1',
+      version='1.1.0',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '
@@ -10,10 +10,10 @@ setup(name='clihelper',
       author_email='gmr@meetme.com',
       url='https://github.com/gmr/clihelper',
       py_modules=['clihelper'],
-      install_requires=['logging-config',
+      install_requires=['logutils',
                         'python-daemon',
                         'pyyaml'],
-      tests_requires=['mock', 'unittest2'],
+      tests_require=['mock', 'unittest2'],
       classifiers=[
           'Development Status :: 4 - Beta',
           'Intended Audience :: Developers',

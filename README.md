@@ -3,16 +3,19 @@
 The clihelper package is a command-line/daemon application wrapper package with
 the aim of creating a consistent method of creating daemonizing applications.
 
-clihelper uses the logging-config package to create a flexible method for
-configuring the python standard logging module. For more information on
-logging-config, see https://github.com/gmr/logging-config.
+clihelper uses logging.config.dictConfig package to create a flexible method for
+configuring the python standard logging module. If Python 2.6 is used,
+logutils.dictconfig.dictConfig is used instead. For information on the dictConfig
+format, see the Python Standard Library documentation on the subject:
+
+  http://docs.python.org/library/logging.config.html
 
 YAML is used for the configuration file for clihelper based applications. The
 configuration files expects three sections:
 
 - Application: This is where configuration specific to your application resides
 - Deamon: There are core directives here for daemonization
-- Logging: This is where the logging-config configuration is placed.
+- Logging: This is where the logging configuration is placed.
 
 The configuration file will automatically be loaded and referenced for all the
 required information to start your application.
@@ -32,6 +35,9 @@ clihelper is availble via pypi.python.org. Using pip to install:
 ## Example Use
 
     import clihelper
+    import logging
+
+    logger = logging.getLogger(__name__)
 
 
     class MyController(clihelper.Controller):
@@ -51,7 +57,6 @@ clihelper is availble via pypi.python.org. Using pip to install:
 
 
     def main():
-
         clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
         clihelper.run(MyController)
 
@@ -72,15 +77,20 @@ configuration.
         pidfile: /var/run/myapp
 
     Logging:
+        version: 1
         formatters:
-            verbose: "%(levelname) -10s %(asctime)s %(process)-6d %(processName) -15s %(name) -25s %(funcName) -25s: %(message)s",
-            syslog: " %(levelname)s <PID %(process)d:%(processName)s> %(name)s.%(funcName)s(): %(message)s"
+            verbose:
+              format: '%(levelname) -10s %(asctime)s %(process)-6d %(processName) -15s %(name) -10s %(funcName) -20s: %(message)s'
+              datefmt: '%Y-%m-%d %H:%M:%S'
+            syslog:
+              format: " %(levelname)s <PID %(process)d:%(processName)s> %(name)s.%(funcName)s(): %(message)s"
         filters:
         handlers:
             console:
-                class: logging.StreamHandler
+                class: logutils.colorize.ColorizingStreamHandler
                 formatter: verbose
                 level: INFO
+                debug_only: true
             syslog:
                 class: logging.handlers.SysLogHandler
                 facility: local6
@@ -95,9 +105,15 @@ configuration.
             urllib3:
                 level: ERROR
                 propagate: true
+        disable_existing_loggers: false
+        incremental: false
 
 Any configuration key under Application is available to you via the
 Controller._get_config method.
+
+* Note that the debug_only node of the Logging > handlers > console section is
+not part of the standard dictConfig format. Please see the "Logging Caveats" section
+below for more information.
 
 ### Invoking
 
@@ -202,7 +218,21 @@ This is an unimplemented method within the Controller class and is registered
 for convenience. If have need for custom signal handling, redefine the
 Controller._on_signusr2 method in your child class.
 
-## Troubleshooting Logging
+## Logging
+
+### Caveats
+
+In order to allow for customizable console output when running in the foreground
+and no console output when daemonized, a "debug_only" node has been added to the
+standard dictConfig format in the handler section. This method is evaluated in
+the clihelper._setup_logging method and removed, if present, prior to passing
+the dictionary to dictConfig if present.
+
+If the value is set to true and the application is not running in the foreground,
+the configuration for the handler and references to it will be removed from the
+configuration dictionary.
+
+### Troubleshooting
 
 If you find that your application is not logging anything or sending output
 to the terminal, ensure that you have created a logger section in your configuration
@@ -211,7 +241,7 @@ make sure there is a MyController logger in the logging configuration.
 
 ## Requirements
 
- - logging-config
+ - logutils
  - python-daemon
  - pyyaml
 

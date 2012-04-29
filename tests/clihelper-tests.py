@@ -1,16 +1,20 @@
 """
-clihelper-tests.py
+Tests for the clihelper module
 
 """
 __author__ = 'Gavin M. Roy'
-__email__ = 'gmr@myyearbook.com'
+__email__ = 'gmr@meetme.com'
 __since__ = '2012-04-18'
 
 import copy
 import daemon
+try:
+    from logging.config import dictConfig
+except ImportError:
+    from logutils.dictconfig import dictConfig
 import grp
 import mock
-import logging_config
+import logging
 import optparse
 import os
 import signal
@@ -26,12 +30,17 @@ sys.path.insert(0, '..')
 import clihelper
 
 _WAKE_INTERVAL = 5
+_APPNAME = 'Test'
+_LOGGER_CONFIG = {_APPNAME: {'level': 'ERROR'}}
 _CONFIG = {clihelper._APPLICATION: {'wake_interval': _WAKE_INTERVAL},
            clihelper._DAEMON: {'user': 'root',
                                'group': 'wheel',
                                'pidfile': '/foo/bar/'},
-           clihelper._LOGGING: {'Formatters': [], 'Filters': [],
-                                'Handlers': [], 'Loggers': []}}
+           clihelper._LOGGING: {'version': 1,
+                                'formatters': [],
+                                'filters': [],
+                                'handlers': [],
+                                'loggers': _LOGGER_CONFIG}}
 
 
 class BaseTests(unittest.TestCase):
@@ -42,13 +51,6 @@ class BaseTests(unittest.TestCase):
                                                self._mock_load_config)
         self._load_config_patcher.start()
         self.addCleanup(self._load_config_patcher.stop)
-
-    def _setup_mock_logging_config(self):
-        self._mock_logging_config = mock.Mock(spec=logging_config.Logging)
-        self._logging_config_patcher = mock.patch('logging_config.Logging',
-                                                  self._mock_logging_config)
-        self._logging_config_patcher.start()
-        self.addCleanup(self._logging_config_patcher.stop)
 
     def _return_context(self):
         return self._daemon_context
@@ -98,7 +100,6 @@ class CLIHelperTests(BaseTests):
 
     def _setup(self):
         self._setup_mock_daemon_context()
-        self._setup_mock_logging_config()
         self._setup_mock_new_option_parser()
 
     def test_cli_options(self):
@@ -227,8 +228,11 @@ class CLIHelperTests(BaseTests):
         self.assertEqual(clihelper._DESCRIPTION, value)
 
     def test_setup_logging(self):
-        clihelper._setup_logging(False)
-        self.assertTrue(self._mock_logging_config.called)
+        clihelper._setup_logging(True)
+        logger = logging.getLogger(_APPNAME)
+        level_name = _LOGGER_CONFIG[_APPNAME]['level']
+        level = logging.getLevelName(level_name)
+        self.assertEqual(logger.level, level)
 
     def test_setup_version(self):
         value = 'TestVersion:%.2f' % time.time()
@@ -253,6 +257,42 @@ class CLIHelperTests(BaseTests):
     def test_validate_config_file_does_not_exist(self):
         clihelper._CONFIG_FILE = '/tmp/clihelper-test-%.2f' % time.time()
         self.assertRaises(OSError, clihelper._validate_config_file)
+
+    def _logging_config_remove_debug_only_values(self):
+        config = {'handlers':
+                          {'debug_true':
+                               {'class': 'logging.StreamHandler',
+                               'debug_only': True},
+                           'debug_false':
+                               {'class': 'logging.FileHandler',
+                                'debug_only': False}},
+                  'loggers': {'Test': {'handlers': ['debug_true',
+                                                    'debug_false']},
+                              'Foo': {'handlers': ['debug_false']}}}
+
+        expectation = {'handlers':
+                           {'debug_false':
+                               {'class': 'logging.FileHandler',
+                                'debug_only': False}},
+                       'loggers': {'Test': {'handlers': ['debug_false']},
+                                   'Foo': {'handlers': ['debug_false']}}}
+        return config, expectation
+
+    def test_remove_handler_from_loggers(self):
+        config, expectation = self._logging_config_remove_debug_only_values()
+        clihelper._remove_handler_from_loggers(config['loggers'], 'debug_true')
+        self.assertEqual(config['loggers'], expectation['loggers'])
+
+    def test_remove_debug_only_handlers(self):
+        config, expectation = self._logging_config_remove_debug_only_values()
+        clihelper._remove_debug_only_handlers(config)
+        self.assertEqual(config, expectation)
+
+    def test_remove_debug_only_from_handlers(self):
+        config, expectation = self._logging_config_remove_debug_only_values()
+        clihelper._remove_debug_only_from_handlers(config)
+        for handler in config['handlers']:
+            self.assertFalse('debug_only' in config['handlers'][handler])
 
 
 class TestController(clihelper.Controller):
@@ -284,14 +324,11 @@ class TestRunControllerTests(BaseTests):
 
     def _setup(self):
         self._setup_mock_daemon_context()
-        self._setup_mock_logging_config()
         self._setup_mock_new_option_parser()
 
     def test_run(self):
         TestPassthruController.run = clihelper.Controller.run
         clihelper.run(TestController)
-        print clihelper._CONTROLLER.slept
-        print clihelper._CONTROLLER.shutdown_completed
         self.assertTrue(clihelper._CONTROLLER.slept and
                         clihelper._CONTROLLER.shutdown_completed)
 
@@ -303,7 +340,7 @@ class TestPassthruController(TestController):
         self._config[clihelper._APPLICATION]['wake_interval'] = 1
 
     def run(self):
-        self._logger.debug('In %r.run', self)
+        logging.getLogger('Test').debug('In %r.run', self)
         self.called = True
         self._set_state(self._STATE_RUNNING)
 
@@ -312,7 +349,6 @@ class TestPassthruControllerTests(BaseTests):
 
     def _setup(self):
         self._setup_mock_daemon_context()
-        self._setup_mock_logging_config()
         self._setup_mock_new_option_parser()
 
     def test_clihelper_run_foreground(self):
@@ -347,7 +383,6 @@ class ControllerTests(BaseTests):
 
     def _setup(self):
         self._setup_mock_daemon_context()
-        self._setup_mock_logging_config()
         self._setup_mock_new_option_parser()
 
     def test_new_instance_has_idle_state(self):
