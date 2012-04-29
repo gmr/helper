@@ -228,7 +228,7 @@ class CLIHelperTests(BaseTests):
         self.assertEqual(clihelper._DESCRIPTION, value)
 
     def test_setup_logging(self):
-        clihelper._setup_logging(True)
+        clihelper.setup_logging(True)
         logger = logging.getLogger(_APPNAME)
         level_name = _LOGGER_CONFIG[_APPNAME]['level']
         level = logging.getLevelName(level_name)

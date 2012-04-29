@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.2.0'
+__version__ = '1.2.1'
 
 import daemon
 import grp
@@ -168,7 +168,7 @@ class Controller(object):
         self._config = get_configuration()
 
         # Re-Setup logging
-        _setup_logging(self._debug)
+        setup_logging(self._debug)
 
     def _set_state(self, state):
         """Set the runtime state of the Controller.
@@ -539,27 +539,6 @@ def _remove_handler_from_loggers(loggers, handler):
             pass
 
 
-def _setup_logging(debug):
-    """Setup the logging configuration and assign the logger. If debug is False
-    strip any handlers and their references from the configuration.
-
-    :param bool debug: The app is in debug mode
-
-    """
-    # Get the configuration
-    logging_config = _get_logging_config()
-
-    # Process debug only handlers
-    if not debug:
-        _remove_debug_only_handlers(logging_config)
-
-    # Remove any references to debug_only
-    _remove_debug_only_from_handlers(logging_config)
-
-    # Run the Dictionary Configuration
-    dictConfig(logging_config)
-
-
 def _validate_config_file():
     """Validates the configuration file is set and that it exists.
 
@@ -624,7 +603,7 @@ def run(controller, option_callback=None):
         sys.exit(1)
 
     if options.foreground:
-        _setup_logging(True)
+        setup_logging(True)
         process = controller(options, arguments)
         set_controller(process)
         try:
@@ -637,7 +616,7 @@ def run(controller, option_callback=None):
 
     # Run the process with the daemon context
     with _get_daemon_context():
-        _setup_logging(False)
+        setup_logging(False)
         process = controller(options, arguments)
         set_controller(process)
         process.run()
@@ -714,3 +693,24 @@ def setup(appname, description, version):
     set_appname(appname)
     set_description(description)
     set_version(version)
+
+
+def setup_logging(debug):
+    """Setup the logging configuration and assign the logger. If debug is False
+    strip any handlers and their references from the configuration.
+
+    :param bool debug: The app is in debug mode
+
+    """
+    # Get the configuration
+    logging_config = _get_logging_config()
+
+    # Process debug only handlers
+    if not debug:
+        _remove_debug_only_handlers(logging_config)
+
+    # Remove any references to debug_only
+    _remove_debug_only_from_handlers(logging_config)
+
+    # Run the Dictionary Configuration
+    dictConfig(logging_config)
