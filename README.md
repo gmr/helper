@@ -14,6 +14,13 @@ configuration files expects three sections:
 - Deamon: There are core directives here for daemonization
 - Logging: This is where the logging-config configuration is placed.
 
+The configuration file will automatically be loaded and referenced for all the
+required information to start your application.
+
+The configuration may be reloaded at runtime by sending a USR1 signal to parent
+process. See the Signal Behaviors section of the README for more information on
+how signals impact application behavior.
+
 See the configuration file example later in this document for more information.
 
 ## Installation
@@ -81,7 +88,7 @@ configuration.
                 formatter: syslog
                 level: INFO
         loggers:
-            clihelper:
+            MyApp:
                 level: DEBUG
                 propagate: true
                 handlers: [console, syslog]
@@ -91,6 +98,32 @@ configuration.
 
 Any configuration key under Application is available to you via the
 Controller._get_config method.
+
+### Invoking
+
+To invoke your application, either add a shebang to the top line (#!/usr/bin/env python)
+and the execute bit set on your file in the filesystem or call via the Python cli
+specifically.
+
+#### Invoking an application with a "/usr/bin/env python" shebang
+
+    ./myapp.py --help
+
+#### Invoking explicitly with Python via the cli
+
+    python myapp.py --help
+
+#### Default CLI Options
+
+    Usage: usage: example.py -c <configfile> [options]
+
+    MyApp is just a demo
+
+    Options:
+      -h, --help            show this help message and exit
+      -c CONFIGURATION, --config=CONFIGURATION
+                            Path to the configuration file.
+      -f, --foreground      Run interactively in console
 
 ### Accessing Configuration
 
@@ -122,6 +155,59 @@ and Controller._arguments.
         """Invoked by a script created by setup tools."""
         clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
         clihelper.run(MyController, setup_options)
+
+## Signal Behaviors
+
+By default, clihelper automates much of the signal handling for you. At time of
+daemonization, clihelper registers handlers for four signals:
+
+- SIGTERM
+- SIGHUP
+- SIGUSR1
+- SIGUSR2
+
+Signals received call registered methods within the Controller class. If you are
+using multiprocessing and have child processes, it is up to you to then signal
+your child processes appropriately.
+
+### Handling SIGTERM
+
+In the event that your application receives a TERM signal, it will change the
+internal state of the Controller class indicating that the application is
+shutting down. This may be checked for by checking for a True value from the
+attribute Controller.is_shutting_down. During this type of shutdown and
+if you are running your application interactively and CTRL-C is pressed,
+Controller._shutdown will be invoked. This method is meant to be extended
+by your application for the purposes of cleanly shutting down your application.
+
+### Handling SIGHUP
+
+The behavior in SIGHUP is to cleanly shutdown the application and then start it
+back up again. It will, like with SIGTERM, call the Controller._shutdown method.
+Once the shutdown is complete, it will clear the internal state and configuration
+and then invoke Controller._run.
+
+### Handling SIGUSR1
+
+If you would like to reload the configuration, sending a SIGUSR1 signal to the
+parent process of the application will invoke the Controller._reload_configuration
+method, freeing the previously help configuration data from memory and reloading
+the configuration file from disk. Because it may be desirable to change runtime
+configuration without restarting the application, it is adviced to use the
+Controller._get_config method instead of holding config values as attributes.
+
+### Handling SIGUSR2
+
+This is an unimplemented method within the Controller class and is registered
+for convenience. If have need for custom signal handling, redefine the
+Controller._on_signusr2 method in your child class.
+
+## Troubleshooting Logging
+
+If you find that your application is not logging anything or sending output
+to the terminal, ensure that you have created a logger section in your configuration
+for your controller. For example if your Controller instance is named MyController,
+make sure there is a MyController logger in the logging configuration.
 
 ## Requirements
 
