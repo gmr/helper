@@ -16,6 +16,12 @@ configuration files expects three sections:
 
 See the configuration file example later in this document for more information.
 
+## Installation
+
+clihelper is availble via pypi.python.org. Using pip to install:
+
+    pip install clihelper
+
 ## Example Use
 
     import clihelper
