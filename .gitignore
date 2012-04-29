@@ -1,5 +1,7 @@
 .idea
 .coverage
 atlassian-ide-plugin.xml
-*pyc
+*.pyc
 example/example.log*
+clihelper.egg-info
+dist
