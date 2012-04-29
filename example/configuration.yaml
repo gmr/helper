@@ -1,0 +1,35 @@
+%YAML 1.2
+---
+Application:
+    wake_interval: 5
+
+Daemon:
+    user: daemon
+    group: daemon
+    pidfile: /var/run/myapp.pid
+
+Logging:
+  filters: {}
+  formatters:
+    syslog: ' %(levelname)s <PID %(process)d:%(processName)s> %(name)s.%(funcName)s(): %(message)s'
+    verbose: '%(levelname) -10s %(asctime)s %(process)-6d %(processName) -15s %(name) -10s %(funcName) -20s: %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: verbose
+      level: DEBUG
+    file:
+      class: logging.handlers.RotatingFileHandler
+      formatter: syslog
+      filename: example.log
+      level: DEBUG
+      maxBytes: 1024
+      backupCount: 5
+  loggers:
+    MyApp:
+      handlers: [console, file]
+      level: DEBUG
+      propagate: true
+    urllib3:
+      level: ERROR
+      propagate: true

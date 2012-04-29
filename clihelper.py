@@ -16,6 +16,7 @@ import os
 from daemon import pidfile
 import pwd
 import signal
+import sys
 import time
 import yaml
 
@@ -293,7 +294,7 @@ def _cli_options(option_callback):
     # Add default options
     parser.add_option("-c", "--config",
                       action="store",
-                      dest="config",
+                      dest="configuration",
                       default=False,
                       help="Path to the configuration file.")
 
@@ -548,7 +549,11 @@ def run(controller, option_callback=None):
     options, arguments = _cli_options(option_callback)
 
     # Setup the config file
-    set_configuration_file(options.configuration)
+    try:
+        set_configuration_file(options.configuration)
+    except ValueError as error:
+        print 'Error: %s\n' % error
+        sys.exit(1)
 
     if options.foreground:
         _setup_logging(True)

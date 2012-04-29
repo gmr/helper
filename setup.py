@@ -1,15 +1,15 @@
 from setuptools import setup
 
 setup(name='clihelper',
-      version='1.1.0',
+      version='1.0.0',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '
                         'starting the application and setting configuration.'),
       author='Gavin M. Roy',
       author_email='gmr@meetme.com',
-      url='https://github.com/Python/clihelper',
-      py_modules=['cliapp'],
+      url='https://github.com/gmr/clihelper',
+      py_modules=['clihelper'],
       install_requires=['couchconfig',
                         'logging-config',
                         'python-daemon',
