@@ -15,4 +15,12 @@ setup(name='clihelper',
                         'python-daemon',
                         'pyyaml'],
       tests_requires=['mock', 'unittest2'],
+      classifiers=[
+          'Development Status :: 4 - Beta',
+          'Intended Audience :: Developers',
+          'Programming Language :: Python :: 2.6',
+          'Programming Language :: Python :: 2.7',
+          'Topic :: Software Development :: Libraries',
+          'Topic :: Software Development :: Libraries :: Python Modules',
+          'License :: OSI Approved :: BSD License'],
       zip_safe=True)
