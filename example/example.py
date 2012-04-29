@@ -6,13 +6,10 @@ __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@myyearbook.com'
 __since__ = '2012-04-18'
 
-import sys
-sys.path.insert(0, '..')
 import clihelper
 
 
 class MyApp(clihelper.Controller):
-
     def _process(self):
         self._logger.info('Would be processing at the specified interval now')
 
