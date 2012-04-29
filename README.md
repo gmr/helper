@@ -48,35 +48,11 @@ clihelper is availble via pypi.python.org. Using pip to install:
         clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
         clihelper.run(MyController)
 
-## Adding command line options
-
-If you would like to add additional command-line options, create a method that
-will receive one argument, parser. The parser is the OptionParser instance and
-you can add OptionParser options like you normally would. The command line options
-and arguments are accessible as attributes in the Controller: Controller._options
-and Controller._arguments.
-
-    def setup_options(parser):
-        """Called by the clihelper._cli_options method if passed to the
-        Controller.run method.
-
-        """
-        parser.add_option("-d", "--delete",
-                          action="store_true",
-                          dest="delete",
-                          default=False,
-                          help="Delete all production data")
-
-    def main():
-        """Invoked by a script created by setup tools."""
-        clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
-        clihelper.run(MyController, setup_options)
-
-
 ## Example Configuration
 
-The following JSON configuration snippets are documents in the
-com_myyearbook_operations_myservice database in the CouchDB configuration system.
+The example configuration file below has a DictCursor configuration, settings
+for the daemon.DaemonContect object and a section for Application specific
+configuration.
 
     %YAML 1.2
     ---
@@ -113,13 +89,39 @@ com_myyearbook_operations_myservice database in the CouchDB configuration system
                 level: ERROR
                 propagate: true
 
-Any configuration key under Application is available to you via the Controller._get_config method.
+Any configuration key under Application is available to you via the
+Controller._get_config method.
 
-### Example
+### Accessing Configuration
 
-The following example assumes it is being called from your extended Controller and wants the variable "wake_interval" from the configuration.
+The following snippet grabs the Application -> wake_interval value and assumes
+you would be calling self._get_config from your extended Controller.
 
     wake_interval = self._get_config('wake_interval')
+
+## Adding command line options
+
+If you would like to add additional command-line options, create a method that
+will receive one argument, parser. The parser is the OptionParser instance and
+you can add OptionParser options like you normally would. The command line options
+and arguments are accessible as attributes in the Controller: Controller._options
+and Controller._arguments.
+
+    def setup_options(parser):
+        """Called by the clihelper._cli_options method if passed to the
+        Controller.run method.
+
+        """
+        parser.add_option("-d", "--delete",
+                          action="store_true",
+                          dest="delete",
+                          default=False,
+                          help="Delete all production data")
+
+    def main():
+        """Invoked by a script created by setup tools."""
+        clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
+        clihelper.run(MyController, setup_options)
 
 ## Requirements
 
@@ -129,7 +131,7 @@ The following example assumes it is being called from your extended Controller a
 
 ## License
 
-Copyright (c) 2012, Meet Me
+Copyright (c) 2012, MeetMe
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -140,7 +142,7 @@ are permitted provided that the following conditions are met:
  * Redistributions in binary form must reproduce the above copyright notice,
    this list of conditions and the following disclaimer in the documentation
    and/or other materials provided with the distribution.
- * Neither the name of the Meet Me nor the names of its contributors may be used
+ * Neither the name of the MeetMe nor the names of its contributors may be used
    to endorse or promote products derived from this software without specific
    prior written permission.
 
