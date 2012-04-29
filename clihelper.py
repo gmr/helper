@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 import daemon
 import grp
@@ -70,7 +70,7 @@ class Controller(object):
         self._debug = options.foreground
 
         # Create a new instance of a configuration object
-        self._config = _get_configuration()
+        self._config = get_configuration()
 
     def _get_application_config(self):
         """Get the configuration data the application itself
@@ -78,7 +78,7 @@ class Controller(object):
         :rtype: dict
 
         """
-        return _get_configuration().get(_APPLICATION)
+        return get_configuration().get(_APPLICATION)
 
     def _get_config(self, key):
         """Get the configuration data for the specified key
@@ -165,7 +165,7 @@ class Controller(object):
         """
         # Delete the config object, creating a new one
         del self._config
-        self._config = _get_configuration()
+        self._config = get_configuration()
 
         # Re-Setup logging
         _setup_logging(self._debug)
@@ -315,25 +315,6 @@ def _cli_options(option_callback):
     return parser.parse_args()
 
 
-def _get_configuration():
-    """Return the configuration object, validating that the required top-level
-    keys exists.
-
-    :rtype: dict
-
-    """
-    # Load the configuration file from disk
-    configuration = _load_config()
-
-    # Validate all the top-level items are there
-    for key in _CONFIG_KEYS:
-        if key not in configuration:
-            raise ValueError('Missing required configuration parameter: %s',
-                             key)
-
-    # Return the configuration dictionary
-    return configuration
-
 
 def _get_daemon_config():
     """Return the daemon specific configuration values
@@ -341,7 +322,7 @@ def _get_daemon_config():
     :rtype: dict
 
     """
-    return _get_configuration().get(_DAEMON)
+    return get_configuration().get(_DAEMON)
 
 
 def _get_daemon_context():
@@ -393,7 +374,7 @@ def _get_logging_config():
     :rtype: dict
 
     """
-    return _get_configuration().get(_LOGGING)
+    return get_configuration().get(_LOGGING)
 
 
 def _get_pidfile_path():
@@ -593,6 +574,34 @@ def _validate_config_file():
         raise OSError('"%s" does not exist' % _CONFIG_FILE)
 
     return True
+
+def add_config_key(key):
+    """Add a top-level key to the expected configuration values for validation
+
+    :param str key: The key to add to the configuraiton keys
+
+    """
+    global _CONFIG_KEYS
+    _CONFIG_KEYS.append(key)
+
+def get_configuration():
+    """Return the configuration object, validating that the required top-level
+    keys exists.
+
+    :rtype: dict
+
+    """
+    # Load the configuration file from disk
+    configuration = _load_config()
+
+    # Validate all the top-level items are there
+    for key in _CONFIG_KEYS:
+        if key not in configuration:
+            raise ValueError('Missing required configuration parameter: %s',
+                             key)
+
+    # Return the configuration dictionary
+    return configuration
 
 
 def run(controller, option_callback=None):

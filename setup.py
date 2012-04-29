@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='clihelper',
-      version='1.1.0',
+      version='1.2.0',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '

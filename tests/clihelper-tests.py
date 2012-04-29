@@ -114,13 +114,13 @@ class CLIHelperTests(BaseTests):
         self.assertTrue(callback.called)
 
     def test_get_configuration(self):
-        self.assertEqual(clihelper._get_configuration(), _CONFIG)
+        self.assertEqual(clihelper.get_configuration(), _CONFIG)
 
     def test_get_configuration_invalid_config(self):
         _BAD_CONFIG = copy.deepcopy(_CONFIG)
         del _BAD_CONFIG[clihelper._LOGGING]
         self._mock_load_config.return_value = _BAD_CONFIG
-        self.assertRaises(ValueError, clihelper._get_configuration)
+        self.assertRaises(ValueError, clihelper.get_configuration)
         self._mock_load_config.return_value = _CONFIG
 
     def test_get_daemon_config(self):
@@ -294,6 +294,12 @@ class CLIHelperTests(BaseTests):
         for handler in config['handlers']:
             self.assertFalse('debug_only' in config['handlers'][handler])
 
+    def test_add_config_key(self):
+        test_option = 'Test'
+        clihelper.add_config_key(test_option)
+        self.assertTrue(test_option in clihelper._CONFIG_KEYS)
+        clihelper._CONFIG_KEYS.remove(test_option)
+
 
 class TestController(clihelper.Controller):
 
@@ -408,7 +414,7 @@ class ControllerTests(BaseTests):
                          _CONFIG[clihelper._APPLICATION][key])
 
     def test_get_config_calls_get_configuration(self):
-        with mock.patch('clihelper._get_configuration') as mock_function:
+        with mock.patch('clihelper.get_configuration') as mock_function:
             mock_function.return_value = _CONFIG
             self._controller._get_config('wake_interval')
             self.assertTrue(mock_function.called)
