@@ -319,6 +319,7 @@ class TestController(clihelper.Controller):
     def _loop(self):
         self._process()
         self._sleep()
+        self._shutdown()
 
     def _set_state(self, state):
         if state == self._STATE_SLEEPING:
@@ -449,10 +450,9 @@ class ControllerTests(BaseTests):
         self.assertAlmostEqual(self._controller._wake_time(), expectation)
 
     def test_shutdown_complete(self):
-        self._controller._set_state(self._controller._STATE_RUNNING)
+        self._controller._state = self._controller._STATE_SHUTTING_DOWN
         self._controller._shutdown_complete()
         self.assertEqual(self._controller._state, self._controller._STATE_IDLE)
-
 
 
 class NonePatchedTests(unittest.TestCase):

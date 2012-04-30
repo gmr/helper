@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.3.0'
+__version__ = '1.3.1'
 
 import daemon
 import grp
@@ -244,7 +244,7 @@ class Controller(object):
             time.sleep(self._SLEEP_UNIT)
 
         # Set the state back to running
-        if self.is_running:
+        if self.is_sleeping:
             logger.debug('Waking')
             self._set_state(self._STATE_RUNNING)
 
@@ -259,6 +259,16 @@ class Controller(object):
         logger.debug('Sleeping %i seconds, waking at %.2f',
                      wake_interval, end_time)
         return end_time
+
+
+    @property
+    def is_idle(self):
+        """Returns True if the controller is idle
+
+        :rtype: bool
+
+        """
+        return self._state == self._STATE_IDLE
 
     @property
     def is_running(self):
