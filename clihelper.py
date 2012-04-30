@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.2.1'
+__version__ = '1.3.0'
 
 import daemon
 import grp
@@ -59,6 +59,8 @@ class Controller(object):
         :param list arguments: Left over positional cli arguments
 
         """
+        self._state = None
+
         # Default state
         self._set_state(self._STATE_IDLE)
 
@@ -110,12 +112,12 @@ class Controller(object):
             try:
                 self._sleep()
             except KeyboardInterrupt:
-                self._running = False
                 logger.info('CTRL-C received, shutting down')
+                self._shutdown()
                 break
             except SystemExit:
-                self._running = False
                 logger.info('Exit signal received, shutting down')
+                self._shutdown()
                 break
 
     def _on_sighup(self, _frame):
@@ -183,6 +185,26 @@ class Controller(object):
                          self._STATE_SHUTTING_DOWN]:
             raise ValueError('Invalid Runtime State')
 
+        # Validate the next state for a shutting down process
+        if self.is_shutting_down and state != self._STATE_IDLE:
+            logging.warning('Attempt to set invalid post shutdown state: %i',
+                            state)
+            return
+
+        # Validate the next state for a running process
+        if self.is_running and state not in [self._STATE_SLEEPING,
+                                             self._STATE_SHUTTING_DOWN]:
+            logging.warning('Attempt to set invalid post running state: %i',
+                            state)
+            return
+
+        # Validate the next state for a sleeping process
+        if self.is_sleeping and state not in [self._STATE_RUNNING,
+                                              self._STATE_SHUTTING_DOWN]:
+            logging.warning('Attempt to set invalid post sleeping state: %i',
+                            state)
+            return
+
         # Set the value
         self._state = state
 
@@ -197,6 +219,9 @@ class Controller(object):
         """Override to implement shutdown steps."""
         logger.debug('Shutting down')
         self._set_state(self._STATE_SHUTTING_DOWN)
+
+        # This should be called at the end of the shutdown sequence
+        self._shutdown_complete()
 
     def _shutdown_complete(self):
         """Sets the state back to idle when shutdown steps are complete."""
@@ -215,12 +240,13 @@ class Controller(object):
         self._set_state(self._STATE_SLEEPING)
 
         # While we've not exceeded the end_time and we're still running
-        while wake_time > time.time() and self.is_running:
+        while  self.is_running and wake_time > time.time():
             time.sleep(self._SLEEP_UNIT)
 
         # Set the state back to running
-        logger.debug('Waking')
-        self._set_state(self._STATE_RUNNING)
+        if self.is_running:
+            logger.debug('Waking')
+            self._set_state(self._STATE_RUNNING)
 
     def _wake_time(self):
         """Calculate the wakeup time for sleeping
@@ -231,7 +257,7 @@ class Controller(object):
         wake_interval =  self._get_wake_interval()
         end_time = int(time.time() + wake_interval)
         logger.debug('Sleeping %i seconds, waking at %.2f',
-                           wake_interval, end_time)
+                     wake_interval, end_time)
         return end_time
 
     @property
@@ -252,6 +278,16 @@ class Controller(object):
         """
         return self._state == self._STATE_SHUTTING_DOWN
 
+
+    @property
+    def is_sleeping(self):
+        """Returns True if the controller is sleeping
+
+        :rtype: bool
+
+        """
+        return self._state == self._STATE_SLEEPING
+
     def run(self):
         """The core method for starting the application. Will setup logging,
         toggle the runtime state flag, block on loop, then call shutdown.
@@ -270,11 +306,9 @@ class Controller(object):
         self._loop()
 
         # Wait until shutdown is complete
+        logger.debug('Waiting for shutdown to complete')
         while self.is_shutting_down:
-            self._sleep()
-
-        # Signal that shutdown is complete
-        self._shutdown_complete()
+            time.sleep(self._SLEEP_UNIT)
 
 
 def _cli_options(option_callback):
@@ -539,6 +573,14 @@ def _remove_handler_from_loggers(loggers, handler):
             pass
 
 
+def _setup_signals():
+    """Setup signals for when the application is running in the foreground."""
+    signal.signal(signal.SIGHUP, _on_sighup)
+    signal.signal(signal.SIGTERM, _on_sigterm)
+    signal.signal(signal.SIGUSR1, _on_sigusr1)
+    signal.signal(signal.SIGUSR2, _on_sigusr2)
+
+
 def _validate_config_file():
     """Validates the configuration file is set and that it exists.
 
@@ -557,7 +599,7 @@ def _validate_config_file():
 def add_config_key(key):
     """Add a top-level key to the expected configuration values for validation
 
-    :param str key: The key to add to the configuraiton keys
+    :param str key: The key to add to the configuration keys
 
     """
     global _CONFIG_KEYS
@@ -604,6 +646,7 @@ def run(controller, option_callback=None):
 
     if options.foreground:
         setup_logging(True)
+        _setup_signals()
         process = controller(options, arguments)
         set_controller(process)
         try:
