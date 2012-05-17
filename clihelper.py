@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.3.1'
+__version__ = '1.4.0'
 
 import daemon
 import grp
@@ -43,7 +43,7 @@ class Controller(object):
     the Controller._loop method.
 
     """
-    _SLEEP_UNIT = 1
+    _SLEEP_UNIT = 0.5
     _WAKE_INTERVAL = 60  # How many seconds to sleep before waking up
 
     _STATE_IDLE = 0
@@ -74,6 +74,10 @@ class Controller(object):
         # Create a new instance of a configuration object
         self._config = get_configuration()
 
+    def _cleanup(self):
+        """Override this method to cleanly shutdown."""
+        logger.info('Unextended %s._cleanup() method', self.__class__.__name__)
+
     def _get_application_config(self):
         """Get the configuration data the application itself
 
@@ -97,60 +101,45 @@ class Controller(object):
         :rtype: int
 
         """
-        return  self._get_application_config().get('wake_interval',
-                                                   self._WAKE_INTERVAL)
+        interval = self._get_application_config().get('wake_interval',
+                                                      self._WAKE_INTERVAL)
+        logger.info('Wake interval set to %i seconds', interval)
+        return interval
 
-    def _loop(self):  #pragma: no cover
-        """The process loop, loop until we are running no more."""
-        # Loop while we are running
-        while self.is_running:
-
-            # Process actions for the application
-            self._process()
-
-            # Sleep
-            try:
-                self._sleep()
-            except KeyboardInterrupt:
-                logger.info('CTRL-C received, shutting down')
-                self._shutdown()
-                break
-            except SystemExit:
-                logger.info('Exit signal received, shutting down')
-                self._shutdown()
-                break
-
-    def _on_sighup(self, _frame):
+    def _on_sighup(self):
         """Called when SIGHUP is received, shutdown internal runtime state,
         reloads configuration and then calls Controller.run().
-
-        :param frame _frame: The stack frame when called
 
         """
         logger.info('Received SIGHUP, restarting internal state')
         self._shutdown()
-        self._shutdown_complete()
         self._reload_configuration()
         self.run()
 
-    def _on_sigterm(self, frame):
+    def _on_sigterm(self):
         """Called when SIGTERM is received, override to implement."""
-        logger.info('Received SIGTERM at frame %r', frame)
+        logger.info('Received SIGTERM, initiating shutdown')
         self._shutdown()
 
-    def _on_sigusr1(self, _frame):
+    def _on_sigusr1(self):
         """Called when SIGUSR1 is received. Reloads configuration and reruns
         the logger/logging setup.
-
-        :param frame _frame: The stack frame when called
 
         """
         logger.info('Received SIGUSR1, reloading configuration')
         self._reload_configuration()
 
-    def _on_sigusr2(self, frame):  #pragma: no cover
+        # If the app is sleeping wait for the signal to call _wake
+        if self.is_sleeping:
+            signal.pause()
+
+    def _on_sigusr2(self):
         """Called when SIGUSR2 is received, override to implement."""
-        logger.info('Received SIGUSR2 at frame %r', frame)
+        logger.info('Received SIGUSR2')
+
+        # If the app is sleeping wait for the signal to call _wake
+        if self.is_sleeping:
+            signal.pause()
 
     def _process(self):
         """To be implemented by the extending class. Is called after every sleep
@@ -179,6 +168,8 @@ class Controller(object):
         :raises: ValueError
 
         """
+        logger.debug('Attempting to set state to %i', state)
+        
         if state not in [self._STATE_IDLE,
                          self._STATE_RUNNING,
                          self._STATE_SLEEPING,
@@ -187,22 +178,22 @@ class Controller(object):
 
         # Validate the next state for a shutting down process
         if self.is_shutting_down and state != self._STATE_IDLE:
-            logging.warning('Attempt to set invalid post shutdown state: %i',
-                            state)
+            logger.warning('Attempt to set invalid post shutdown state: %i',
+                           state)
             return
 
         # Validate the next state for a running process
         if self.is_running and state not in [self._STATE_SLEEPING,
                                              self._STATE_SHUTTING_DOWN]:
-            logging.warning('Attempt to set invalid post running state: %i',
-                            state)
+            logger.warning('Attempt to set invalid post running state: %i',
+                           state)
             return
 
         # Validate the next state for a sleeping process
         if self.is_sleeping and state not in [self._STATE_RUNNING,
                                               self._STATE_SHUTTING_DOWN]:
-            logging.warning('Attempt to set invalid post sleeping state: %i',
-                            state)
+            logger.warning('Attempt to set invalid post sleeping state: %i',
+                           state)
             return
 
         # Set the value
@@ -218,9 +209,22 @@ class Controller(object):
     def _shutdown(self):
         """Override to implement shutdown steps."""
         logger.debug('Shutting down')
+
+        # Wait for the current run to finish
+        while self.is_running:
+            logger.debug('Waiting for the _process to finish')
+            time.sleep(self._SLEEP_UNIT)
+
+        # Change the state to shutting down
         self._set_state(self._STATE_SHUTTING_DOWN)
 
-        # This should be called at the end of the shutdown sequence
+        # Clear out the timer
+        signal.setitimer(signal.ITIMER_PROF, 0, 0)
+
+        # Call a method that may be overwritten to cleanly shutdown
+        self._cleanup()
+
+        # Change our state
         self._shutdown_complete()
 
     def _shutdown_complete(self):
@@ -229,37 +233,44 @@ class Controller(object):
         self._set_state(self._STATE_IDLE)
 
     def _sleep(self):
-        """Sleep for the configured sleep interval or until the app has been
-        told to shutdown.
+        """Setup the next alarm to fire and then wait for it to fire."""
+        logger.debug('Setting up to sleep')
 
-        """
-        # Calculate when the application should wake
-        wake_time = self._wake_time()
+        # Make sure that the application is not shutting down before sleeping
+        if self.is_shutting_down:
+            logger.debug('Not sleeping, application is trying to shutdown')
+            return
 
-        # Set the state to sleeping
+        # Set the signal timer
+        signal.setitimer(signal.ITIMER_REAL, self._get_wake_interval())
+
+        # Toggle that we are running
         self._set_state(self._STATE_SLEEPING)
 
-        # While we've not exceeded the end_time and we're still running
-        while  self.is_running and wake_time > time.time():
-            time.sleep(self._SLEEP_UNIT)
+        # Pause until the signal is called
+        signal.pause()
 
-        # Set the state back to running
-        if self.is_sleeping:
-            logger.debug('Waking')
-            self._set_state(self._STATE_RUNNING)
+    def _wake(self, _signal, _frame):
+        """Fired every time the alarm is signaled. If the app is not shutting
+        or shutdown, it will attempt to process.
 
-    def _wake_time(self):
-        """Calculate the wakeup time for sleeping
-
-        :rtype: int
+        :param int _signal: The signal number
+        :param frame _frame: The stack frame when received
 
         """
-        wake_interval =  self._get_wake_interval()
-        end_time = int(time.time() + wake_interval)
-        logger.debug('Sleeping %i seconds, waking at %.2f',
-                     wake_interval, end_time)
-        return end_time
+        logger.debug('Application woke up')
 
+        # Only run the code path if it's not shutting down or shutdown
+        if not self.is_shutting_down and not self.is_idle:
+
+            # Note that we're running
+            self._set_state(self._STATE_RUNNING)
+
+            # Process actions for the application
+            self._process()
+
+            # Wait until we're woken again
+            self._sleep()
 
     @property
     def is_idle(self):
@@ -277,7 +288,7 @@ class Controller(object):
         :rtype: bool
 
         """
-        return self._state in [self._STATE_RUNNING, self._STATE_SLEEPING]
+        return self._state == self._STATE_RUNNING
 
     @property
     def is_shutting_down(self):
@@ -302,23 +313,23 @@ class Controller(object):
         """The core method for starting the application. Will setup logging,
         toggle the runtime state flag, block on loop, then call shutdown.
 
+        Redefine this method if you intend to use an IO Loop or some other
+        long running process.
+
         """
-        # Call this now because the app may be in a new process
-        logger.info('Process running')
+        logger.debug('Process running')
 
         # Call the _setup method
         self._setup()
 
-        # Toggle that we are running
-        self._set_state(self._STATE_RUNNING)
+        # Process the first time without a loop
+        self._process()
 
-        # Loop until we're not
-        self._loop()
+        # Set the SIGALRM handler
+        signal.signal(signal.SIGALRM, self._wake)
 
-        # Wait until shutdown is complete
-        logger.debug('Waiting for shutdown to complete')
-        while self.is_shutting_down:
-            time.sleep(self._SLEEP_UNIT)
+        # Sleep
+        self._sleep()
 
 
 def _cli_options(option_callback):
@@ -477,44 +488,48 @@ def _new_option_parser():
     return optparse.OptionParser()
 
 
-def _on_sighup(_signal, frame):
+def _on_sighup(_signal, _frame):
     """Received when SIGHUP is received.
 
     :param int _signal: The signal number
-    :param frame frame: The stack frame when received
+    :param frame _frame: The stack frame when received
 
     """
-    _CONTROLLER._on_sighup(frame)
+    logger.debug('SIGHUP received, notifying controller')
+    _CONTROLLER._on_sighup()
 
 
-def _on_sigterm(_signal, frame):
+def _on_sigterm(_signal, _frame):
     """Received when SIGTERM is received.
 
     :param int _signal: The signal number
     :param frame frame: The stack frame when received
 
     """
-    _CONTROLLER._on_sigterm(frame)
+    logger.debug('SIGTERM received, notifying controller')
+    _CONTROLLER._on_sigterm()
 
 
-def _on_sigusr1(_signal, frame):
+def _on_sigusr1(_signal, _frame):
     """Received when SIGUSR1 is received.
 
     :param int _signal: The signal number
     :param frame frame: The stack frame when received
 
     """
-    _CONTROLLER._on_sigusr1(frame)
+    logger.debug('SIGUSR1 received, notifying controller')
+    _CONTROLLER._on_sigusr1()
 
 
-def _on_sigusr2(_signal, frame):
-    """Received when SIGUSR1 is received.
+def _on_sigusr2(_signal, _frame):
+    """Received when SIGUSR2 is received.
 
     :param int _signal: The signal number
-    :param frame frame: The stack frame when received
+    :param frame _frame: The stack frame when received
 
     """
-    _CONTROLLER._on_sigusr2(frame)
+    logger.debug('SIGUSR2 received, notifying controller')
+    _CONTROLLER._on_sigusr2()
 
 
 def _parse_yaml(content):
@@ -585,6 +600,7 @@ def _remove_handler_from_loggers(loggers, handler):
 
 def _setup_signals():
     """Setup signals for when the application is running in the foreground."""
+    logger.debug('Registering signals')
     signal.signal(signal.SIGHUP, _on_sighup)
     signal.signal(signal.SIGTERM, _on_sigterm)
     signal.signal(signal.SIGUSR1, _on_sigusr1)
@@ -662,9 +678,8 @@ def run(controller, option_callback=None):
         try:
             return process.run()
         except KeyboardInterrupt:
-            logging.info('CTRL-C caught, shutting down')
-            process._on_sigterm(None)
-            logging.info('Shutdown')
+            logger.info('CTRL-C caught, shutting down')
+            process._on_sigterm()
             return
 
     # Run the process with the daemon context

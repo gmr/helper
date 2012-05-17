@@ -24,6 +24,10 @@ The configuration may be reloaded at runtime by sending a USR1 signal to parent
 process. See the Signal Behaviors section of the README for more information on
 how signals impact application behavior.
 
+clihelper uses SIGALARM and signal.pause() to control intervals where the
+dameon should be idle. Do not mix use of SIGALARM unless you intend to redefine
+the run method for use with an IO Loop or some other long running process.
+
 See the configuration file example later in this document for more information.
 
 ## Installation
@@ -49,7 +53,7 @@ clihelper is availble via pypi.python.org. Using pip to install:
         def _process(self):
             """This method is called after every sleep interval. If the intention
             is to use an IOLoop instead of sleep interval based daemon, override
-            the _loop method.
+            the run method.
 
             """
             # Do whatever your application does here
@@ -87,16 +91,14 @@ configuration.
         filters:
         handlers:
             console:
-                class: logutils.colorize.ColorizingStreamHandler
+                class: logging.StreamHandler
                 formatter: verbose
-                level: INFO
                 debug_only: true
             syslog:
                 class: logging.handlers.SysLogHandler
                 facility: local6
                 address: /dev/log
                 formatter: syslog
-                level: INFO
         loggers:
             MyApp:
                 level: DEBUG

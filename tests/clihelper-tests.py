@@ -123,6 +123,29 @@ class CLIHelperTests(BaseTests):
         self.assertRaises(ValueError, clihelper.get_configuration)
         self._mock_load_config.return_value = _CONFIG
 
+    def test_run_invalid_config(self):
+        options = self._mock_options()
+        options.configuration = ''
+        config = {'return_value': (options, list())}
+        with mock.patch('clihelper._cli_options', **config):
+            with mock.patch('sys.exit'):
+                self.assertRaises(ValueError,
+                                  clihelper.run(TestPassthruController))
+
+    def test_run_daemonization(self):
+        self._ran = False
+        @mock.patch.object(TestPassthruController, 'run')
+        def _run():
+            self._ran = True
+        options = self._mock_options()
+        options.foreground = False
+        config = {'return_value': (options, list())}
+        with mock.patch('clihelper._cli_options', **config):
+            with mock.patch('sys.exit'):
+                with mock.patch('clihelper._get_daemon_context') as dc:
+                    clihelper.run(TestPassthruController)
+                    self.assertTrue(dc.called)
+
     def test_get_daemon_config(self):
         self.assertEqual(clihelper._get_daemon_config(),
                          _CONFIG[clihelper._DAEMON])
@@ -140,7 +163,6 @@ class CLIHelperTests(BaseTests):
         self.assertIsInstance(context, daemon.DaemonContext)
 
     def test_get_pidfile_path(self):
-        print _CONFIG
         self.assertEqual(clihelper._get_pidfile_path(),
                          _CONFIG[clihelper._DAEMON]['pidfile'])
 
@@ -159,25 +181,25 @@ class CLIHelperTests(BaseTests):
         frame = time.time()
         with mock.patch.object(self._controller, '_on_sighup') as sighup:
             clihelper._on_sighup(signal.SIGHUP, frame)
-            sighup.assert_called_with(frame)
+            self.assertTrue(sighup.called)
 
     def test_on_sigterm(self):
         frame = time.time()
         with mock.patch.object(self._controller, '_on_sigterm') as sigterm:
             clihelper._on_sigterm(signal.SIGTERM, frame)
-            sigterm.assert_called_with(frame)
+            self.assertTrue(sigterm.called)
 
     def test_on_sigusr1(self):
         frame = time.time()
         with mock.patch.object(self._controller, '_on_sigusr1') as sigusr1:
             clihelper._on_sigusr1(signal.SIGUSR1, frame)
-            sigusr1.assert_called_with(frame)
+            self.assertTrue(sigusr1.called)
 
     def test_on_sigusr2(self):
         frame = time.time()
         with mock.patch.object(self._controller, '_on_sigusr2') as sigusr2:
             clihelper._on_sigusr2(signal.SIGUSR2, frame)
-            sigusr2.assert_called_with(frame)
+            self.assertTrue(sigusr2.called)
 
     def test_parse_yaml(self):
         content = yaml.dump(_CONFIG)
@@ -327,29 +349,31 @@ class TestController(clihelper.Controller):
         self._state = state
 
 
-class TestRunControllerTests(BaseTests):
-
-    def _setup(self):
-        self._setup_mock_daemon_context()
-        self._setup_mock_new_option_parser()
-
-    def test_run(self):
-        TestPassthruController.run = clihelper.Controller.run
-        clihelper.run(TestController)
-        self.assertTrue(clihelper._CONTROLLER.slept and
-                        clihelper._CONTROLLER.shutdown_completed)
-
-
 class TestPassthruController(TestController):
 
     def __init__(self, options, arguments):
         super(TestPassthruController, self).__init__(options, arguments)
         self._config[clihelper._APPLICATION]['wake_interval'] = 1
+        self.process_called = False
+        self.run_called = False
+        self.setup_called = False
+        self.sleep_called = False
 
-    def run(self):
-        logging.getLogger('Test').debug('In %r.run', self)
-        self.called = True
-        self._set_state(self._STATE_RUNNING)
+    def _run(self):
+        logging.getLogger('Test').debug('In %r._run', self)
+        self.run_called = True
+
+    def _process(self):
+        logging.getLogger('Test').debug('In %r._process', self)
+        self.process_called = True
+
+    def _sleep(self):
+        logging.getLogger('Test').debug('In %r._sleep', self)
+        self.sleep_called = True
+
+    def _setup(self):
+        logging.getLogger('Test').debug('In %r._setup', self)
+        self.setup_called = True
 
 
 class TestPassthruControllerTests(BaseTests):
@@ -359,31 +383,51 @@ class TestPassthruControllerTests(BaseTests):
         self._setup_mock_new_option_parser()
 
     def test_clihelper_run_foreground(self):
+        TestPassthruController.run = TestPassthruController._run
         clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.called)
+        self.assertTrue(clihelper._CONTROLLER.run_called)
+
+    def test_clihelper_run_process_called(self):
+        TestPassthruController.run = clihelper.Controller.run
+        clihelper.run(TestPassthruController)
+        self.assertTrue(clihelper._CONTROLLER.process_called)
+
+    def test_clihelper_setup_process_called(self):
+        TestPassthruController.run = clihelper.Controller.run
+        clihelper.run(TestPassthruController)
+        self.assertTrue(clihelper._CONTROLLER.setup_called)
+
+    def test_clihelper_sleep_process_called(self):
+        TestPassthruController.run = clihelper.Controller.run
+        clihelper.run(TestPassthruController)
+        self.assertTrue(clihelper._CONTROLLER.sleep_called)
 
     def test_clihelper_run_foreground_interrupt(self):
+        TestPassthruController.run = TestPassthruController._run
         def run_keyboard_interrupt(self):
-            self.called = True
+            self.run_called = True
             raise KeyboardInterrupt
         TestPassthruController.run = run_keyboard_interrupt
         clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.called)
+        self.assertTrue(clihelper._CONTROLLER.run_called)
 
-    def test_clihelper_on_sighup(self):
-        clihelper.run(TestPassthruController)
-        clihelper._CONTROLLER._on_sighup(0)
-        self.assertEqual(clihelper._CONTROLLER._state,
-                         clihelper.Controller._STATE_RUNNING)
-        self.assertTrue(clihelper._CONTROLLER.shutdown_completed)
+    def test_clihelper_wake_passthrough_set_state(self):
+        controller = TestPassthruController(self._mock_options(), None)
+        controller._state = controller._STATE_SLEEPING
+        controller._wake(1, 1)
+        self.assertEqual(controller._state, controller._STATE_RUNNING)
 
-    def test_sleep(self):
-        clihelper.run(TestPassthruController)
-        controller = clihelper._CONTROLLER
-        controller._state = controller._STATE_RUNNING
-        controller._sleep()
-        self.assertTrue(controller.slept)
+    def test_clihelper_wake_passthrough_process_called(self):
+        controller = TestPassthruController(self._mock_options(), None)
+        controller._state = controller._STATE_SLEEPING
+        controller._wake(1, 1)
+        self.assertTrue(controller.process_called)
 
+    def test_clihelper_wake_passthrough_sleep_called(self):
+        controller = TestPassthruController(self._mock_options(), None)
+        controller._state = controller._STATE_SLEEPING
+        controller._wake(1, 1)
+        self.assertTrue(controller.sleep_called)
 
 
 class ControllerTests(BaseTests):
@@ -396,6 +440,9 @@ class ControllerTests(BaseTests):
         self.assertEqual(self._controller._state,
                          clihelper.Controller._STATE_IDLE)
 
+    def test_new_instance_is_idle(self):
+        self.assertTrue(self._controller.is_idle)
+
     def test_new_instance_is_not_running(self):
         self.assertFalse(self._controller.is_running)
 
@@ -404,6 +451,55 @@ class ControllerTests(BaseTests):
 
     def test_set_state_invalid_option(self):
         self.assertRaises(ValueError, self._controller._set_state, -1)
+
+    def test_set_state_invalid_state_when_running(self):
+        self._controller._state = self._controller._STATE_RUNNING
+        self._controller._set_state(self._controller._STATE_IDLE)
+        self.assertEqual(self._controller._state,
+                         self._controller._STATE_RUNNING)
+
+    def test_set_state_invalid_state_when_shutting_down(self):
+        self._controller._state = self._controller._STATE_SHUTTING_DOWN
+        self._controller._set_state(self._controller._STATE_RUNNING)
+        self.assertEqual(self._controller._state,
+                         self._controller._STATE_SHUTTING_DOWN)
+
+    def test_set_state_invalid_state_when_sleeping(self):
+        self._controller._state = self._controller._STATE_SLEEPING
+        self._controller._set_state(self._controller._STATE_IDLE)
+        self.assertEqual(self._controller._state,
+                         self._controller._STATE_SLEEPING)
+
+    def test_sleep_bails_when_shutting_down(self):
+        self._controller._state = self._controller._STATE_SHUTTING_DOWN
+        with mock.patch('signal.setitimer') as mfunction:
+            try:
+                self._controller._sleep()
+                self.assertFalse(mfunction.called)
+            except AssertionError:
+                self.assertTrue(False, 'Did not cleanly exit')
+
+    def test_sleep_calls_itimer(self):
+        self._controller._state = self._controller._STATE_RUNNING
+        with mock.patch('signal.pause') as _pause:
+            with mock.patch('signal.setitimer') as setitimer:
+                self._controller._sleep()
+                self.assertTrue(setitimer.called)
+
+    def test_sleep_sets_right_state(self):
+        self._controller._state = self._controller._STATE_RUNNING
+        with mock.patch('signal.pause') as _pause:
+            with mock.patch('signal.setitimer') as _setitimer:
+                self._controller._sleep()
+                self.assertEqual(self._controller._state,
+                                 self._controller._STATE_SLEEPING)
+
+    def test_sleep_calls_pause(self):
+        self._controller._state = self._controller._STATE_RUNNING
+        with mock.patch('signal.pause') as pause:
+            with mock.patch('signal.setitimer') as _setitimer:
+                self._controller._sleep()
+                self.assertTrue(pause.called)
 
     def test_get_application_config(self):
         self.assertEqual(self._controller._get_application_config(),
@@ -432,7 +528,8 @@ class ControllerTests(BaseTests):
         _NEW_CONFIG = copy.deepcopy(_CONFIG)
         _NEW_CONFIG['test_value'] = time.time()
         self._mock_load_config.return_value = _NEW_CONFIG
-        self._controller._on_sigusr1(0)
+        self._controller._state = self._controller._STATE_RUNNING
+        self._controller._on_sigusr1()
         self.assertEqual(self._controller._config, _NEW_CONFIG)
         self._mock_load_config.return_value = _CONFIG
 
@@ -445,14 +542,107 @@ class ControllerTests(BaseTests):
         self.assertEqual(self._controller._config, _NEW_CONFIG)
         self._mock_load_config.return_value = _CONFIG
 
-    def test_wake_time(self):
-        expectation = int(time.time() + _WAKE_INTERVAL)
-        self.assertAlmostEqual(self._controller._wake_time(), expectation)
-
     def test_shutdown_complete(self):
         self._controller._state = self._controller._STATE_SHUTTING_DOWN
         self._controller._shutdown_complete()
         self.assertEqual(self._controller._state, self._controller._STATE_IDLE)
+
+    def test_shutdown_clears_itimer(self):
+        self._controller._state = self._controller._STATE_SLEEPING
+        with mock.patch('signal.setitimer') as setitimer:
+            self._controller._shutdown()
+            setitimer.assert_called_with(signal.ITIMER_PROF, 0, 0)
+
+    def test_shutdown_calls_time_sleep(self):
+        slept = False
+        def sleep_now(value):
+            logging.debug('Value: %r', value)
+            self._controller._state = self._controller._STATE_SLEEPING
+        self._controller._state = self._controller._STATE_RUNNING
+        with mock.patch('signal.setitimer') as _setitimer:
+            with mock.patch('time.sleep', side_effect=sleep_now) as time_sleep:
+                self._controller._shutdown()
+                time_sleep.assert_called_with(self._controller._SLEEP_UNIT)
+
+    def test_shutdown_calls_shutdown_complete(self):
+        self._controller._state = self._controller._STATE_SLEEPING
+        with mock.patch('signal.setitimer') as _setitimer:
+            self._controller._shutdown()
+        self.assertEqual(self._controller._state, self._controller._STATE_IDLE)
+
+    def test_on_hup_calls_reload(self):
+        self.reloaded = False
+        self.run_called = False
+        self.shutdown_called = False
+        def reload_configuration():
+            self.reloaded = True
+        def run():
+            self.run_called = True
+        def _shutdown():
+            self.shutdown_called = True
+        self._controller._reload_configuration = reload_configuration
+        self._controller._shutdown = _shutdown
+        self._controller.run = run
+        self._controller._on_sighup()
+        self.assertTrue(self.reloaded)
+
+    def test_on_hup_calls_run(self):
+        self.reloaded = False
+        self.run_called = False
+        self.shutdown_called = False
+        def reload_configuration():
+            self.reloaded = True
+        def run():
+            self.run_called = True
+        def _shutdown():
+            self.shutdown_called = True
+        self._controller._reload_configuration = reload_configuration
+        self._controller._shutdown = _shutdown
+        self._controller.run = run
+        self._controller._on_sighup()
+        self.assertTrue(self.run_called)
+
+    def test_on_hup_calls_shutdown(self):
+        self.reloaded = False
+        self.run_called = False
+        self.shutdown_called = False
+        def reload_configuration():
+            self.reloaded = True
+        def run():
+            self.run_called = True
+        def _shutdown():
+            self.shutdown_called = True
+        self._controller._reload_configuration = reload_configuration
+        self._controller._shutdown = _shutdown
+        self._controller.run = run
+        self._controller._on_sighup()
+        self.assertTrue(self.shutdown_called)
+
+    def test_on_sigusr1_calls_reload_configuration(self):
+        self._controller._state = self._controller._STATE_SLEEPING
+        self.reloaded = False
+        def reload_configuration():
+            self.reloaded = True
+        self._controller._reload_configuration = reload_configuration
+        with mock.patch('signal.pause') as _pause:
+            self._controller._on_sigusr1()
+            self.assertTrue(self.reloaded)
+
+    def test_on_sigusr1_calls_signal_pause(self):
+        self._controller._state = self._controller._STATE_SLEEPING
+        self.reloaded = False
+        def reload_configuration():
+            self.reloaded = True
+        self._controller._reload_configuration = reload_configuration
+        with mock.patch('signal.pause') as pause:
+            self._controller._on_sigusr1()
+            self.assertTrue(pause.called)
+
+    def test_on_sigusr2_calls_signal_pause(self):
+        self._controller._state = self._controller._STATE_SLEEPING
+        with mock.patch('signal.pause') as pause:
+            self._controller._on_sigusr2()
+            self.assertTrue(pause.called)
 
 
 class NonePatchedTests(unittest.TestCase):
