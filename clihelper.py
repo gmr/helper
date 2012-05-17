@@ -682,7 +682,7 @@ def run(controller, option_callback=None):
             return process.run()
         except KeyboardInterrupt:
             logger.info('CTRL-C caught, shutting down')
-            process._on_sigterm()
+            process._shutdown()
             return
 
     # Run the process with the daemon context
