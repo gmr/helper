@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.0'
+__version__ = '1.4.1'
 
 import daemon
 import grp
@@ -84,7 +84,7 @@ class Controller(object):
         :rtype: dict
 
         """
-        return get_configuration().get(_APPLICATION)
+        return self._config.get(_APPLICATION)
 
     def _get_config(self, key):
         """Get the configuration data for the specified key
@@ -169,7 +169,7 @@ class Controller(object):
 
         """
         logger.debug('Attempting to set state to %i', state)
-        
+
         if state not in [self._STATE_IDLE,
                          self._STATE_RUNNING,
                          self._STATE_SLEEPING,
