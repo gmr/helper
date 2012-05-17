@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.1'
+__version__ = '1.4.2'
 
 import daemon
 import grp
@@ -242,13 +242,10 @@ class Controller(object):
             return
 
         # Set the signal timer
-        signal.setitimer(signal.ITIMER_REAL, self._get_wake_interval())
+        signal.setitimer(signal.ITIMER_REAL, self._get_wake_interval(), 0)
 
         # Toggle that we are running
         self._set_state(self._STATE_SLEEPING)
-
-        # Pause until the signal is called
-        signal.pause()
 
     def _wake(self, _signal, _frame):
         """Fired every time the alarm is signaled. If the app is not shutting
@@ -330,6 +327,12 @@ class Controller(object):
 
         # Sleep
         self._sleep()
+
+        # Loop Until we can not loop any more
+        while self.is_running or self.is_sleeping:
+
+            # Wait for an alarm signal
+            signal.pause()
 
 
 def _cli_options(option_callback):
