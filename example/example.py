@@ -6,6 +6,8 @@ Example application
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-18'
+import sys
+sys.path.insert(0, '..')
 
 import clihelper
 import logging

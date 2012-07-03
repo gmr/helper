@@ -499,7 +499,7 @@ class ControllerTests(BaseTests):
         with mock.patch('signal.pause') as pause:
             with mock.patch('signal.setitimer') as _setitimer:
                 self._controller._sleep()
-                self.assertTrue(pause.called)
+                pause.assert_called_once()
 
     def test_get_application_config(self):
         self.assertEqual(self._controller._get_application_config(),
@@ -514,7 +514,7 @@ class ControllerTests(BaseTests):
         with mock.patch('clihelper.get_configuration') as mock_function:
             mock_function.return_value = _CONFIG
             self._controller._get_config('wake_interval')
-            self.assertTrue(mock_function.called)
+            mock_function.assert_called_once()
 
     def test_get_wake_interval(self):
         self.assertEqual(self._controller._get_wake_interval(),

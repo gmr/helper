@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.3'
+__version__ = '1.4.4'
 
 import daemon
 import grp
@@ -404,7 +404,8 @@ def _get_daemon_context():
         context.gid = _get_gid(config['group'])
 
     # Set the pidfile to write when app has started
-    context.pidfile = pidfile.PIDLockFile(config.get('pidfile', _PIDFILE))
+    filename = config.get('pidfile', _PIDFILE) % {'pid': os.getpid()}
+    context.pidfile = pidfile.PIDLockFile(filename)
 
     # Setup the signal map
     context.signal_map = {signal.SIGHUP: _on_sighup,
