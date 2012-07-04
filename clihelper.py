@@ -5,10 +5,11 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.4'
+__version__ = '1.4.5'
 
 import daemon
 import grp
+import lockfile
 import logging
 try:
     from logging.config import dictConfig
@@ -31,7 +32,7 @@ _CONFIG_KEYS = [_APPLICATION, _DAEMON, _LOGGING]
 _CONFIG_FILE = None
 _CONTROLLER = None
 _DESCRIPTION = 'Command Line Daemon'
-_PIDFILE = '/var/run/%s.pid'
+_PIDFILE = '/var/run/%(app)s-%(pid)s.pid'
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,6 @@ class Controller(object):
         """
         return self._state == self._STATE_SHUTTING_DOWN
 
-
     @property
     def is_sleeping(self):
         """Returns True if the controller is sleeping
@@ -373,14 +373,13 @@ def _cli_options(option_callback):
     return parser.parse_args()
 
 
-
 def _get_daemon_config():
     """Return the daemon specific configuration values
 
     :rtype: dict
 
     """
-    return get_configuration().get(_DAEMON)
+    return get_configuration().get(_DAEMON) or dict()
 
 
 def _get_daemon_context():
@@ -389,7 +388,6 @@ def _get_daemon_context():
     :rtype: daemon.DaemonContext
 
     """
-    # Return the daemon configuration values
     config = _get_daemon_config()
 
     # Create the new context to daemonize with
@@ -404,8 +402,7 @@ def _get_daemon_context():
         context.gid = _get_gid(config['group'])
 
     # Set the pidfile to write when app has started
-    filename = config.get('pidfile', _PIDFILE) % {'pid': os.getpid()}
-    context.pidfile = pidfile.PIDLockFile(filename)
+    context.pidfile = lockfile.FileLock(path=_get_pidfile_path())
 
     # Setup the signal map
     context.signal_map = {signal.SIGHUP: _on_sighup,
@@ -443,7 +440,8 @@ def _get_pidfile_path():
 
     """
     config = _get_daemon_config()
-    return config.get('pidfile', _PIDFILE % _APPNAME)
+    return config.get('pidfile', _PIDFILE) % {'app': _APPNAME,
+                                              'pid': os.getpid()}
 
 
 def _get_uid(username):
@@ -676,6 +674,7 @@ def run(controller, option_callback=None):
 
     if options.foreground:
         setup_logging(True)
+        logger.debug('Running interactively')
         _setup_signals()
         process = controller(options, arguments)
         set_controller(process)
