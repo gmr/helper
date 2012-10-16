@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.6'
+__version__ = '1.4.7'
 
 import daemon
 import grp
@@ -74,6 +74,9 @@ class Controller(object):
 
         # Create a new instance of a configuration object
         self._config = get_configuration()
+
+        # Write out the pidfile
+        self._write_pidfile()
 
     def _cleanup(self):
         """Override this method to cleanly shutdown."""
@@ -270,6 +273,11 @@ class Controller(object):
             # Wait until we're woken again
             self._sleep()
 
+    def _write_pidfile(self):
+        """Write the pidfile out with the process number in the pidfile"""
+        with open(_get_pidfile_path(), "w") as handle:
+            handle.write(str(os.getpid()))
+
     @property
     def is_idle(self):
         """Returns True if the controller is idle
@@ -315,23 +323,11 @@ class Controller(object):
 
         """
         logger.debug('Process running')
-
-        # Call the _setup method
         self._setup()
-
-        # Process the first time without a loop
         self._process()
-
-        # Set the SIGALRM handler
         signal.signal(signal.SIGALRM, self._wake)
-
-        # Sleep
         self._sleep()
-
-        # Loop Until we can not loop any more
         while self.is_running or self.is_sleeping:
-
-            # Wait for an alarm signal
             signal.pause()
 
 
@@ -402,10 +398,7 @@ def _get_daemon_context():
         context.gid = _get_gid(config['group'])
 
     # Set the pidfile to write when app has started
-    pidfile = _get_pidfile_path()
-    with open(pidfile, "w") as handle:
-        handle.write(str(os.getpid()))
-    context.pidfile = lockfile.FileLock(path=pidfile)
+    context.pidfile = lockfile.FileLock(path=_get_pidfile_path())
 
     # Setup the signal map
     context.signal_map = {signal.SIGHUP: _on_sighup,
@@ -694,6 +687,10 @@ def run(controller, option_callback=None):
         set_controller(process)
         process.run()
 
+    # Remove the pidfile
+    pidfile = _get_pidfile_path()
+    if os.path.exists(pidfile):
+        os.unlink(pidfile)
 
 def set_appname(appname):
     """Sets the application name for the instance of the application.
