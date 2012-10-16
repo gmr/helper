@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.7'
+__version__ = '1.4.8'
 
 import daemon
 import grp
@@ -80,7 +80,7 @@ class Controller(object):
 
     def _cleanup(self):
         """Override this method to cleanly shutdown."""
-        logger.info('Unextended %s._cleanup() method', self.__class__.__name__)
+        logger.debug('Unextended %s._cleanup() method', self.__class__.__name__)
 
     def _get_application_config(self):
         """Get the configuration data the application itself
@@ -107,7 +107,7 @@ class Controller(object):
         """
         interval = self._get_application_config().get('wake_interval',
                                                       self._WAKE_INTERVAL)
-        logger.info('Wake interval set to %i seconds', interval)
+        logger.debug('Wake interval set to %i seconds', interval)
         return interval
 
     def _on_sighup(self):
