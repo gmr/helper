@@ -35,7 +35,7 @@ _LOGGER_CONFIG = {_APPNAME: {'level': 'ERROR'}}
 _CONFIG = {clihelper._APPLICATION: {'wake_interval': _WAKE_INTERVAL},
            clihelper._DAEMON: {'user': 'root',
                                'group': 'wheel',
-                               'pidfile': '/foo/bar/'},
+                               'pidfile': '/tmp/test.pid'},
            clihelper._LOGGING: {'version': 1,
                                 'formatters': [],
                                 'filters': [],
@@ -60,15 +60,10 @@ class BaseTests(unittest.TestCase):
 
     def _setup_mock_daemon_context(self):
         self._daemon_context = mock.Mock(spec=daemon.DaemonContext)
-        self._daemon_context_patcher = \
-            mock.patch('clihelper._new_daemon_context', self._return_context)
-        self._daemon_context_patcher.start()
-        self.addCleanup(self._daemon_context_patcher.stop)
 
     def _setup_mock_new_option_parser(self):
         self._optparse = mock.Mock(spec=optparse.OptionParser)
-        self._optparse.parse_args = mock.Mock(return_value = (self._options,
-                                                              list()))
+        self._optparse.parse_args = mock.Mock(return_value=(self._options, []))
         self._optparse_patcher = mock.patch('clihelper._new_option_parser',
                                             self._return_optparse)
         self._optparse_patcher.start()
@@ -132,47 +127,21 @@ class CLIHelperTests(BaseTests):
                 self.assertRaises(ValueError,
                                   clihelper.run(TestPassthruController))
 
-    def test_run_daemonization(self):
-        self._ran = False
-        @mock.patch.object(TestPassthruController, 'run')
-        def _run():
-            self._ran = True
-        options = self._mock_options()
-        options.foreground = False
-        config = {'return_value': (options, list())}
-        with mock.patch('clihelper._cli_options', **config):
-            with mock.patch('sys.exit'):
-                with mock.patch('clihelper._get_daemon_context') as dc:
-                    clihelper.run(TestPassthruController)
-                    self.assertTrue(dc.called)
-
     def test_get_daemon_config(self):
         self.assertEqual(clihelper._get_daemon_config(),
                          _CONFIG[clihelper._DAEMON])
 
     def test_get_logging_config(self):
-        self.assertEqual(clihelper._get_logging_config(),
+        self.assertEqual(clihelper.get_logging_config(),
                          _CONFIG[clihelper._LOGGING])
 
     def test_get_gid(self):
         value = 'wheel'
         self.assertEqual(clihelper._get_gid(value), grp.getgrnam(value).gr_gid)
 
-    def test_get_daemon_context(self):
-        context = clihelper._get_daemon_context()
-        self.assertIsInstance(context, daemon.DaemonContext)
-
     def test_get_pidfile_path(self):
         self.assertEqual(clihelper._get_pidfile_path(),
                          _CONFIG[clihelper._DAEMON]['pidfile'])
-
-    def test_get_pidfile_default(self):
-        _BAD_CONFIG = copy.deepcopy(_CONFIG)
-        del _BAD_CONFIG[clihelper._DAEMON]['pidfile']
-        self._mock_load_config.return_value = _BAD_CONFIG
-        self.assertEqual(clihelper._get_pidfile_path(),
-                         clihelper._PIDFILE % clihelper._APPNAME)
-        self._mock_load_config.return_value = _CONFIG
 
     def test_get_uid(self):
         self.assertEqual(clihelper._get_uid('root'), 0)
@@ -374,60 +343,6 @@ class TestPassthruController(TestController):
     def _setup(self):
         logging.getLogger('Test').debug('In %r._setup', self)
         self.setup_called = True
-
-
-class TestPassthruControllerTests(BaseTests):
-
-    def _setup(self):
-        self._setup_mock_daemon_context()
-        self._setup_mock_new_option_parser()
-
-    def test_clihelper_run_foreground(self):
-        TestPassthruController.run = TestPassthruController._run
-        clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.run_called)
-
-    def test_clihelper_run_process_called(self):
-        TestPassthruController.run = clihelper.Controller.run
-        clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.process_called)
-
-    def test_clihelper_setup_process_called(self):
-        TestPassthruController.run = clihelper.Controller.run
-        clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.setup_called)
-
-    def test_clihelper_sleep_process_called(self):
-        TestPassthruController.run = clihelper.Controller.run
-        clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.sleep_called)
-
-    def test_clihelper_run_foreground_interrupt(self):
-        TestPassthruController.run = TestPassthruController._run
-        def run_keyboard_interrupt(self):
-            self.run_called = True
-            raise KeyboardInterrupt
-        TestPassthruController.run = run_keyboard_interrupt
-        clihelper.run(TestPassthruController)
-        self.assertTrue(clihelper._CONTROLLER.run_called)
-
-    def test_clihelper_wake_passthrough_set_state(self):
-        controller = TestPassthruController(self._mock_options(), None)
-        controller._state = controller._STATE_SLEEPING
-        controller._wake(1, 1)
-        self.assertEqual(controller._state, controller._STATE_RUNNING)
-
-    def test_clihelper_wake_passthrough_process_called(self):
-        controller = TestPassthruController(self._mock_options(), None)
-        controller._state = controller._STATE_SLEEPING
-        controller._wake(1, 1)
-        self.assertTrue(controller.process_called)
-
-    def test_clihelper_wake_passthrough_sleep_called(self):
-        controller = TestPassthruController(self._mock_options(), None)
-        controller._state = controller._STATE_SLEEPING
-        controller._wake(1, 1)
-        self.assertTrue(controller.sleep_called)
 
 
 class ControllerTests(BaseTests):
@@ -643,24 +558,3 @@ class ControllerTests(BaseTests):
         with mock.patch('signal.pause') as pause:
             self._controller._on_sigusr2()
             self.assertTrue(pause.called)
-
-
-class NonePatchedTests(unittest.TestCase):
-
-    def test_new_context(self):
-        self.assertIsInstance(clihelper._new_daemon_context(),
-                              daemon.DaemonContext)
-
-    def test_new_option_parser(self):
-        self.assertIsInstance(clihelper._new_option_parser(),
-                              optparse.OptionParser)
-
-    def test_load_config_file(self):
-        filename = '/tmp/clihelper.test.%.2f' % time.time()
-        content = yaml.dump(_CONFIG)
-        with open(filename, 'w') as handle:
-            handle.write(content)
-        clihelper.set_configuration_file(filename)
-        result = clihelper._load_config()
-        os.unlink(filename)
-        self.assertEqual(result, _CONFIG)

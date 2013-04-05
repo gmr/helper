@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.4.8'
+__version__ = '1.5.0'
 
 import daemon
 import grp
@@ -17,11 +17,11 @@ except ImportError:
     from logutils.dictconfig import dictConfig
 import optparse
 import os
-from daemon import pidfile
 import pwd
 import signal
 import sys
 import time
+import traceback
 import yaml
 
 _APPNAME = 'clihelper'
@@ -34,7 +34,7 @@ _CONTROLLER = None
 _DESCRIPTION = 'Command Line Daemon'
 _PIDFILE = '/var/run/%(app)s.pid'
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class Controller(object):
@@ -80,7 +80,7 @@ class Controller(object):
 
     def _cleanup(self):
         """Override this method to cleanly shutdown."""
-        logger.debug('Unextended %s._cleanup() method', self.__class__.__name__)
+        LOGGER.debug('Unextended %s._cleanup() method', self.__class__.__name__)
 
     def _get_application_config(self):
         """Get the configuration data the application itself
@@ -107,7 +107,7 @@ class Controller(object):
         """
         interval = self._get_application_config().get('wake_interval',
                                                       self._WAKE_INTERVAL)
-        logger.debug('Wake interval set to %i seconds', interval)
+        LOGGER.debug('Wake interval set to %i seconds', interval)
         return interval
 
     def _on_sighup(self):
@@ -115,22 +115,22 @@ class Controller(object):
         reloads configuration and then calls Controller.run().
 
         """
-        logger.info('Received SIGHUP, restarting internal state')
+        LOGGER.info('Received SIGHUP, restarting internal state')
         self._shutdown()
         self._reload_configuration()
         self.run()
 
     def _on_sigterm(self):
         """Called when SIGTERM is received, override to implement."""
-        logger.info('Received SIGTERM, initiating shutdown')
+        LOGGER.info('Received SIGTERM, initiating shutdown')
         self._shutdown()
 
     def _on_sigusr1(self):
         """Called when SIGUSR1 is received. Reloads configuration and reruns
-        the logger/logging setup.
+        the LOGGER/logging setup.
 
         """
-        logger.info('Received SIGUSR1, reloading configuration')
+        LOGGER.info('Received SIGUSR1, reloading configuration')
         self._reload_configuration()
 
         # If the app is sleeping wait for the signal to call _wake
@@ -139,7 +139,7 @@ class Controller(object):
 
     def _on_sigusr2(self):
         """Called when SIGUSR2 is received, override to implement."""
-        logger.info('Received SIGUSR2')
+        LOGGER.info('Received SIGUSR2')
 
         # If the app is sleeping wait for the signal to call _wake
         if self.is_sleeping:
@@ -172,7 +172,7 @@ class Controller(object):
         :raises: ValueError
 
         """
-        logger.debug('Attempting to set state to %i', state)
+        LOGGER.debug('Attempting to set state to %i', state)
 
         if state not in [self._STATE_IDLE,
                          self._STATE_RUNNING,
@@ -182,21 +182,21 @@ class Controller(object):
 
         # Validate the next state for a shutting down process
         if self.is_shutting_down and state != self._STATE_IDLE:
-            logger.warning('Attempt to set invalid post shutdown state: %i',
+            LOGGER.warning('Attempt to set invalid post shutdown state: %i',
                            state)
             return
 
         # Validate the next state for a running process
         if self.is_running and state not in [self._STATE_SLEEPING,
                                              self._STATE_SHUTTING_DOWN]:
-            logger.warning('Attempt to set invalid post running state: %i',
+            LOGGER.warning('Attempt to set invalid post running state: %i',
                            state)
             return
 
         # Validate the next state for a sleeping process
         if self.is_sleeping and state not in [self._STATE_RUNNING,
                                               self._STATE_SHUTTING_DOWN]:
-            logger.warning('Attempt to set invalid post sleeping state: %i',
+            LOGGER.warning('Attempt to set invalid post sleeping state: %i',
                            state)
             return
 
@@ -204,7 +204,7 @@ class Controller(object):
         self._state = state
 
         # Log the change
-        logger.debug('Runtime state changed to %i', self._state)
+        LOGGER.debug('Runtime state changed to %i', self._state)
 
     def _setup(self):  #pragma: no cover
         """Override to provide any required setup steps."""
@@ -212,11 +212,11 @@ class Controller(object):
 
     def _shutdown(self):
         """Override to implement shutdown steps."""
-        logger.debug('Shutting down')
+        LOGGER.debug('Shutting down')
 
         # Wait for the current run to finish
         while self.is_running:
-            logger.debug('Waiting for the _process to finish')
+            LOGGER.debug('Waiting for the _process to finish')
             time.sleep(self._SLEEP_UNIT)
 
         # Change the state to shutting down
@@ -233,16 +233,16 @@ class Controller(object):
 
     def _shutdown_complete(self):
         """Sets the state back to idle when shutdown steps are complete."""
-        logger.debug('Shutdown complete')
+        LOGGER.debug('Shutdown complete')
         self._set_state(self._STATE_IDLE)
 
     def _sleep(self):
         """Setup the next alarm to fire and then wait for it to fire."""
-        logger.debug('Setting up to sleep')
+        LOGGER.debug('Setting up to sleep')
 
         # Make sure that the application is not shutting down before sleeping
         if self.is_shutting_down:
-            logger.debug('Not sleeping, application is trying to shutdown')
+            LOGGER.debug('Not sleeping, application is trying to shutdown')
             return
 
         # Set the signal timer
@@ -259,7 +259,7 @@ class Controller(object):
         :param frame _frame: The stack frame when received
 
         """
-        logger.debug('Application woke up')
+        LOGGER.debug('Application woke up')
 
         # Only run the code path if it's not shutting down or shutdown
         if not self.is_shutting_down and not self.is_idle:
@@ -322,7 +322,7 @@ class Controller(object):
         long running process.
 
         """
-        logger.debug('Process running')
+        LOGGER.debug('Process running')
         self._setup()
         self._process()
         signal.signal(signal.SIGALRM, self._wake)
@@ -378,36 +378,33 @@ def _get_daemon_config():
     return get_configuration().get(_DAEMON) or dict()
 
 
-def _get_daemon_context():
-    """Return an instance of the daemon.DaemonContext class.
+def _get_daemon_context_kargs():
+    """Return pre-configured keyword arguments for the DaemonContext
 
-    :rtype: daemon.DaemonContext
+    :rtype: dict
 
     """
     config = _get_daemon_config()
 
-    # Create the new context to daemonize with
-    context = _new_daemon_context()
-
     # If user is specified in the config, set it for the context
+    uid = None
     if config.get('user'):
-        context.uid = _get_uid(config['user'])
+        uid = _get_uid(config['user'])
 
     # If group is specified in the config, set it for the context
+    gid = None
     if config.get('group'):
-        context.gid = _get_gid(config['group'])
+        gid = _get_gid(config['group'])
 
-    # Set the pidfile to write when app has started
-    context.pidfile = lockfile.FileLock(path=_get_pidfile_path())
-
-    # Setup the signal map
-    context.signal_map = {signal.SIGHUP: _on_sighup,
-                          signal.SIGTERM: _on_sigterm,
-                          signal.SIGUSR1: _on_sigusr1,
-                          signal.SIGUSR2: _on_sigusr2}
-
-    # This will be used by the caller to daemonize the application
-    return context
+    return {'detach_process': True,
+            'gid': gid,
+            'pidfile': lockfile.FileLock(path=_get_pidfile_path()),
+            'prevent_core': False,
+            'signal_map': {signal.SIGHUP: _on_sighup,
+                           signal.SIGTERM: _on_sigterm,
+                           signal.SIGUSR1: _on_sigusr1,
+                           signal.SIGUSR2: _on_sigusr2},
+            'uid': uid}
 
 
 def _get_gid(group):
@@ -418,15 +415,6 @@ def _get_gid(group):
 
     """
     return grp.getgrnam(group).gr_gid
-
-
-def _get_logging_config():
-    """Return the configuration data for dictConfig
-
-    :rtype: dict
-
-    """
-    return get_configuration().get(_LOGGING)
 
 
 def _get_pidfile_path():
@@ -467,15 +455,6 @@ def _load_config():
     return _parse_yaml(content)
 
 
-def _new_daemon_context():
-    """Return a new daemon context.
-
-    :rtype: daemon.DaemonContext
-
-    """
-    return daemon.DaemonContext()
-
-
 def _new_option_parser():
     """Return a new optparse.OptionParser instance.
 
@@ -492,7 +471,7 @@ def _on_sighup(_signal, _frame):
     :param frame _frame: The stack frame when received
 
     """
-    logger.debug('SIGHUP received, notifying controller')
+    LOGGER.debug('SIGHUP received, notifying controller')
     _CONTROLLER._on_sighup()
 
 
@@ -503,7 +482,7 @@ def _on_sigterm(_signal, _frame):
     :param frame frame: The stack frame when received
 
     """
-    logger.debug('SIGTERM received, notifying controller')
+    LOGGER.debug('SIGTERM received, notifying controller')
     _CONTROLLER._on_sigterm()
 
 
@@ -514,7 +493,7 @@ def _on_sigusr1(_signal, _frame):
     :param frame frame: The stack frame when received
 
     """
-    logger.debug('SIGUSR1 received, notifying controller')
+    LOGGER.debug('SIGUSR1 received, notifying controller')
     _CONTROLLER._on_sigusr1()
 
 
@@ -525,7 +504,7 @@ def _on_sigusr2(_signal, _frame):
     :param frame _frame: The stack frame when received
 
     """
-    logger.debug('SIGUSR2 received, notifying controller')
+    LOGGER.debug('SIGUSR2 received, notifying controller')
     _CONTROLLER._on_sigusr2()
 
 
@@ -588,20 +567,18 @@ def _remove_handler_from_loggers(loggers, handler):
     :param str handler: The name of the handler to remove references to
 
     """
-    for logger in loggers:
+    for LOGGER in loggers:
         try:
-            loggers[logger]['handlers'].remove(handler)
+            loggers[LOGGER]['handlers'].remove(handler)
         except ValueError:
             pass
 
 
-def _setup_signals():
-    """Setup signals for when the application is running in the foreground."""
-    logger.debug('Registering signals')
-    signal.signal(signal.SIGHUP, _on_sighup)
-    signal.signal(signal.SIGTERM, _on_sigterm)
-    signal.signal(signal.SIGUSR1, _on_sigusr1)
-    signal.signal(signal.SIGUSR2, _on_sigusr2)
+def _remove_pidfile():
+    """Remove the pidfile from the filesystem"""
+    pidfile_path = _get_pidfile_path()
+    if os.path.exists(pidfile_path):
+        os.unlink(pidfile_path)
 
 
 def _validate_config_file():
@@ -619,6 +596,7 @@ def _validate_config_file():
 
     return True
 
+
 def add_config_key(key):
     """Add a top-level key to the expected configuration values for validation
 
@@ -627,6 +605,16 @@ def add_config_key(key):
     """
     global _CONFIG_KEYS
     _CONFIG_KEYS.append(key)
+
+
+def get_logging_config():
+    """Return the configuration data for dictConfig
+
+    :rtype: dict
+
+    """
+    return get_configuration().get(_LOGGING)
+
 
 def get_configuration():
     """Return the configuration object, validating that the required top-level
@@ -667,30 +655,33 @@ def run(controller, option_callback=None):
         print 'Error: %s\n' % error
         sys.exit(1)
 
-    if options.foreground:
-        setup_logging(True)
-        logger.debug('Running interactively')
-        _setup_signals()
-        process = controller(options, arguments)
-        set_controller(process)
-        try:
-            return process.run()
-        except KeyboardInterrupt:
-            logger.info('CTRL-C caught, shutting down')
-            process._shutdown()
-            return
-
     # Run the process with the daemon context
-    with _get_daemon_context():
-        setup_logging(False)
-        process = controller(options, arguments)
-        set_controller(process)
-        process.run()
+    kwargs = _get_daemon_context_kargs()
+    if options.foreground:
+        kwargs['detach_process'] = False
+        kwargs['stderr'] = sys.stderr
+        kwargs['stdin'] = sys.stdin
+        kwargs['stdout'] = sys.stdout
 
-    # Remove the pidfile
-    pidfile = _get_pidfile_path()
-    if os.path.exists(pidfile):
-        os.unlink(pidfile)
+    # This will be used by the caller to daemonize the application
+    try:
+        with daemon.DaemonContext(**kwargs):
+            LOGGER.debug('Running interactively')
+            setup_logging(options.foreground)
+            process = controller(options, arguments)
+            set_controller(process)
+            try:
+                process.run()
+            except KeyboardInterrupt:
+                LOGGER.info('CTRL-C caught, shutting down')
+                process._shutdown()
+            _remove_pidfile()
+    except Exception as error:
+        with open('/tmp/clihelper-exception-%s.log' % int(time.time()),
+                  'a') as handle:
+            handle.write(repr(error))
+            traceback.print_exc(25, handle)
+
 
 def set_appname(appname):
     """Sets the application name for the instance of the application.
@@ -766,14 +757,14 @@ def setup(appname, description, version):
 
 
 def setup_logging(debug):
-    """Setup the logging configuration and assign the logger. If debug is False
+    """Setup the logging configuration and assign the LOGGER. If debug is False
     strip any handlers and their references from the configuration.
 
     :param bool debug: The app is in debug mode
 
     """
     # Get the configuration
-    logging_config = _get_logging_config()
+    logging_config = get_logging_config()
 
     # Process debug only handlers
     if not debug:

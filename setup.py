@@ -1,7 +1,16 @@
+import platform
 from setuptools import setup
 
+requirements = ['python-daemon', 'pyyaml']
+tests_require = ['mock']
+(major, minor, rev) = platform.python_version_tuple()
+if float('%s.%s' % (major, minor)) < 2.7:
+    requirements.append('argparse')
+    tests_require.append('unittest2')
+
+
 setup(name='clihelper',
-      version='1.4.8',
+      version='1.5.0',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '
@@ -10,10 +19,8 @@ setup(name='clihelper',
       author_email='gmr@meetme.com',
       url='https://github.com/gmr/clihelper',
       py_modules=['clihelper'],
-      install_requires=['logutils',
-                        'python-daemon',
-                        'pyyaml'],
-      tests_require=['mock', 'unittest2'],
+      install_requires=requirements,
+      tests_require=tests_require,
       classifiers=[
           'Development Status :: 4 - Beta',
           'Intended Audience :: Developers',
