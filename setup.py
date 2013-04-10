@@ -11,7 +11,7 @@ if float('%s.%s' % (major, minor)) < 2.7:
 
 
 setup(name='clihelper',
-      version='1.5.1',
+      version='1.5.3',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '

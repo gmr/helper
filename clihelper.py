@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.5.1'
+__version__ = '1.5.3'
 
 import daemon
 import grp
@@ -17,6 +17,8 @@ except ImportError:
     from logutils.dictconfig import dictConfig
 import optparse
 import os
+from os import path
+import pprint
 import pwd
 import signal
 import sys
@@ -445,9 +447,6 @@ def _load_config():
     :raises: OSError
 
     """
-    # Validate the config file exists
-    _validate_config_file()
-
     # Read the config file off the filesystem
     content = _read_config_file()
 
@@ -581,22 +580,6 @@ def _remove_pidfile():
         os.unlink(pidfile_path)
 
 
-def _validate_config_file():
-    """Validates the configuration file is set and that it exists.
-
-    :rtype: bool
-    :raises: ValueError, OSError
-
-    """
-    if not _CONFIG_FILE:
-        raise ValueError('Missing internal reference to configuration file')
-
-    if not os.path.exists(_CONFIG_FILE):
-        raise OSError('"%s" does not exist' % _CONFIG_FILE)
-
-    return True
-
-
 def add_config_key(key):
     """Add a top-level key to the expected configuration values for validation
 
@@ -652,7 +635,7 @@ def run(controller, option_callback=None):
     try:
         set_configuration_file(options.configuration)
     except ValueError as error:
-        print 'Error: %s\n' % error
+        sys.stderr.write('Error: %s\n' % error)
         sys.exit(1)
 
     # Run the process with the daemon context
@@ -677,10 +660,12 @@ def run(controller, option_callback=None):
                 process._shutdown()
             _remove_pidfile()
     except Exception as error:
-        with open('/tmp/clihelper-exception-%s.log' % int(time.time()),
-                  'a') as handle:
+        sys.stdout.write('Exception: %r\n\n' % error)
+        with open('/tmp/clihelper-exceptions.log', 'a') as handle:
             handle.write(repr(error))
-            traceback.print_exc(25, handle)
+            output = traceback.format_exception(*sys.exc_info())
+            [sys.stdout.write(line) for line in output]
+        sys.exit(1)
 
 
 def set_appname(appname):
@@ -704,13 +689,18 @@ def set_configuration_file(filename):
 
     # Make sure the configuration file was specified
     if not filename:
-        raise ValueError('Missing required configuration file value')
+        sys.stderr.write('Missing required configuration file value\n' %
+                         filename)
+        sys.exit(1)
+
+    filename = os.path.abspath(filename)
+    if not os.path.exists(filename):
+        sys.stderr.write('Configuration file "%s" does not exist\n' %
+                         filename)
+        sys.exit(1)
 
     # Set the config file to the global variable
     _CONFIG_FILE = filename
-
-    # Validate the file exists
-    _validate_config_file()
 
 
 def set_controller(controller):
