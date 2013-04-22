@@ -5,7 +5,7 @@ support.
 __author__ = 'Gavin M. Roy'
 __email__ = 'gmr@meetme.com'
 __since__ = '2012-04-11'
-__version__ = '1.5.3'
+__version__ = '1.6.0'
 
 import daemon
 import grp
@@ -17,24 +17,27 @@ except ImportError:
     from logutils.dictconfig import dictConfig
 import optparse
 import os
-from os import path
-import pprint
 import pwd
 import signal
 import sys
 import time
 import traceback
+import warnings
 import yaml
 
-_APPNAME = 'clihelper'
-_APPLICATION = 'Application'
-_DAEMON = 'Daemon'
-_LOGGING = 'Logging'
-_CONFIG_KEYS = [_APPLICATION, _DAEMON, _LOGGING]
-_CONFIG_FILE = None
-_CONTROLLER = None
-_DESCRIPTION = 'Command Line Daemon'
-_PIDFILE = '/var/run/%(app)s.pid'
+
+APPNAME = 'clihelper'
+APPLICATION = 'Application'
+DAEMON = 'Daemon'
+EXCEPTION_LOG = '/tmp/clihelper-exceptions.log'
+LOGGING = 'Logging'
+CONFIG_KEYS = [APPLICATION, DAEMON, LOGGING]
+CONFIG_FILE = None
+CONTROLLER = None
+DESCRIPTION = 'Command Line Daemon'
+PIDFILE = '/var/run/%(app)s.pid'
+VERSION = __version__
+WRITE_EXCEPTION_LOG = True
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,13 +49,28 @@ class Controller(object):
     the Controller._loop method.
 
     """
-    _SLEEP_UNIT = 0.5
-    _WAKE_INTERVAL = 60  # How many seconds to sleep before waking up
+    SLEEP_UNIT = 0.5
+    WAKE_INTERVAL = 60  # How many seconds to sleep before waking up
 
-    _STATE_IDLE = 0
-    _STATE_RUNNING = 1
-    _STATE_SLEEPING = 2
-    _STATE_SHUTTING_DOWN = 3
+    # State constants
+    STATE_INITIALIZING = 0x01
+    STATE_CONNECTING = 0x02
+    STATE_SLEEPING = 0x03
+    STATE_IDLE = 0x04
+    STATE_ACTIVE = 0x05
+    STATE_STOP_REQUESTED = 0x06
+    STATE_STOPPING = 0x07
+    STATE_STOPPED = 0x08
+
+    # For reverse lookup
+    _STATES = {0x01: 'Initializing',
+               0x02: 'Connecting',
+               0x03: 'Sleeping',
+               0x04: 'Idle',
+               0x05: 'Active',
+               0x06: 'Stop Requested',
+               0x07: 'Stopping',
+               0x08: 'Stopped'}
 
     def __init__(self, options, arguments):
         """Create an instance of the controller passing in the debug flag,
@@ -62,99 +80,215 @@ class Controller(object):
         :param list arguments: Left over positional cli arguments
 
         """
+        # Carry debug around for when/if HUP is called or the value is needed
+        self._debug = options.foreground
+
+        # Initial state setup
         self._state = None
 
         # Default state
-        self._set_state(self._STATE_IDLE)
+        self.set_state(self.STATE_INITIALIZING)
 
         # Carry these for possible later use
         self._options = options
         self._arguments = arguments
 
-        # Carry debug around for when/if HUP is called or the value is needed
-        self._debug = options.foreground
-
         # Create a new instance of a configuration object
         self._config = get_configuration()
 
-        # Write out the pidfile
-        self._write_pidfile()
-
-    def _cleanup(self):
-        """Override this method to cleanly shutdown."""
-        LOGGER.debug('Unextended %s._cleanup() method', self.__class__.__name__)
-
-    def _get_application_config(self):
-        """Get the configuration data the application itself
+    @property
+    def application_config(self):
+        """Return the appplication section of the configuration
 
         :rtype: dict
 
         """
-        return self._config.get(_APPLICATION)
+        return self._config.get(APPLICATION)
 
-    def _get_config(self, key):
-        """Get the configuration data for the specified key
+    def cleanup(self):
+        """Override this method to cleanly shutdown the application."""
+        LOGGER.debug('Unextended %s.cleanup() method', self.__class__.__name__)
+        if hasattr(self, '_cleanup'):
+            warnings.warn('Controller._cleanup is deprecated, '
+                          'extend Controller.cleanup',
+                          DeprecationWarning, stacklevel=2)
+            self._cleanup()
 
-        :param str key: The key to get config data for
-        :rtype: any
+    @property
+    def config(self):
+        """Return the configuration dictionary
+
+        :rtype: dict
 
         """
-        return self._get_application_config().get(key)
+        return self._config
 
-    def _get_wake_interval(self):
-        """Return the wake interval in seconds.
+    @property
+    def is_active(self):
+        """Returns a bool specifying if the process is currently active.
 
-        :rtype: int
+        :rtype: bool
 
         """
-        interval = self._get_application_config().get('wake_interval',
-                                                      self._WAKE_INTERVAL)
-        LOGGER.debug('Wake interval set to %i seconds', interval)
-        return interval
+        return self._state == self.STATE_ACTIVE
 
-    def _on_sighup(self):
+    @property
+    def is_connecting(self):
+        """Returns a bool specifying if the process is currently connecting.
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_CONNECTING
+
+    @property
+    def is_idle(self):
+        """Returns a bool specifying if the process is currently idle.
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_IDLE
+
+    @property
+    def is_initializing(self):
+        """Returns a bool specifying if the process is currently initializing.
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_INITIALIZING
+
+    @property
+    def is_running(self):
+        """Returns a bool determining if the process is in a running state or
+        not
+
+        :rtype: bool
+
+        """
+        return self._state in [self.STATE_ACTIVE,
+                               self.STATE_CONNECTING,
+                               self.STATE_INITIALIZING]
+
+    @property
+    def is_sleeping(self):
+        """Returns True if the controller is sleeping
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_SLEEPING
+
+    @property
+    def is_stopped(self):
+        """Returns a bool determining if the process is stopped
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_STOPPED
+
+    @property
+    def is_stopping(self):
+        """Returns a bool determining if the process is stopping
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_STOPPING
+
+    @property
+    def is_waiting_to_stop(self):
+        """Designates if the process is waiting to start shutdown
+
+        :rtype: bool
+
+        """
+        return self._state == self.STATE_STOP_REQUESTED
+
+    @property
+    def logging_config(self):
+        """Return the logging section of the configuration
+
+        :rtype: dict
+
+        """
+        return self._config.get(LOGGING)
+
+    def on_sighup(self):
         """Called when SIGHUP is received, shutdown internal runtime state,
         reloads configuration and then calls Controller.run().
 
         """
         LOGGER.info('Received SIGHUP, restarting internal state')
-        self._shutdown()
-        self._reload_configuration()
-        self.run()
+        if hasattr(self, '_on_sighup'):
+            warnings.warn('Controller._on_sighup is deprecated, '
+                          'extend Controller.on_sighup',
+                          DeprecationWarning, stacklevel=2)
+            return self._on_sighup()
+        else:
+            self.stop()
+            self.reload_configuration()
+            self.run()
 
-    def _on_sigterm(self):
+    def on_sigterm(self):
         """Called when SIGTERM is received, override to implement."""
         LOGGER.info('Received SIGTERM, initiating shutdown')
-        self._shutdown()
+        if hasattr(self, '_on_sigterm'):
+            warnings.warn('Controller._on_sigterm is deprecated, '
+                          'extend Controller.on_sigterm',
+                          DeprecationWarning, stacklevel=2)
+            return self._on_sigterm()
+        else:
+            self.stop()
 
-    def _on_sigusr1(self):
+    def on_sigusr1(self):
         """Called when SIGUSR1 is received. Reloads configuration and reruns
         the LOGGER/logging setup.
 
         """
         LOGGER.info('Received SIGUSR1, reloading configuration')
-        self._reload_configuration()
 
-        # If the app is sleeping wait for the signal to call _wake
-        if self.is_sleeping:
-            signal.pause()
+        if hasattr(self, '_on_sigusr1'):
+            warnings.warn('Controller._on_sigusr1 is deprecated, '
+                          'extend Controller.on_sigusr1',
+                          DeprecationWarning, stacklevel=2)
+            return self._on_sigusr1()
+        else:
+            self.reload_configuration()
 
-    def _on_sigusr2(self):
+            # If the app is sleeping cause it to go back to sleep
+            if self.is_sleeping:
+                signal.pause()
+
+    def on_sigusr2(self):
         """Called when SIGUSR2 is received, override to implement."""
         LOGGER.info('Received SIGUSR2')
 
-        # If the app is sleeping wait for the signal to call _wake
-        if self.is_sleeping:
-            signal.pause()
+        if hasattr(self, '_on_sigusr2'):
+            warnings.warn('Controller._on_sigusr2 is deprecated, '
+                          'extend Controller.on_sigusr2',
+                          DeprecationWarning, stacklevel=2)
+            return self._on_sigusr2()
+        else:
+            # If the app is sleeping cause it to go back to sleep
+            if self.is_sleeping:
+                signal.pause()
 
-    def _process(self):
-        """To be implemented by the extending class. Is called after every sleep
-        interval in the main application loop.
+    def process(self):
+        """To be implemented by the extending class. Is called after every
+        sleep interval in the main application loop.
 
         """
+        if hasattr(self, '_process'):
+            warnings.warn('Controller._process is deprecated, '
+                          'extend Controller.process',
+                          DeprecationWarning, stacklevel=2)
+            return self._process()
         raise NotImplementedError
 
-    def _reload_configuration(self):
+    def reload_configuration(self):
         """Reload the configuration by creating a new instance of the
         Configuration object and re-setup logging. Extend behavior by
         overriding object while calling super.
@@ -167,93 +301,135 @@ class Controller(object):
         # Re-Setup logging
         setup_logging(self._debug)
 
-    def _set_state(self, state):
+    def run(self):
+        """The core method for starting the application. Will setup logging,
+        toggle the runtime state flag, block on loop, then call shutdown.
+
+        Redefine this method if you intend to use an IO Loop or some other
+        long running process.
+
+        """
+        LOGGER.debug('Process running')
+        self.setup()
+        self.process()
+        signal.signal(signal.SIGALRM, self.wake)
+        self.sleep()
+        while self.is_running or self.is_sleeping:
+            signal.pause()
+
+    def set_state(self, state):
         """Set the runtime state of the Controller.
 
         :param int state: The runtime state
         :raises: ValueError
 
         """
-        LOGGER.debug('Attempting to set state to %i', state)
+        LOGGER.debug('Attempting to set state to %s', self._STATES.get(state,
+                                                                       state))
+        if state == self._state:
+            LOGGER.debug('Ignoring request to set state to current state: %s',
+                         self._STATES[state])
+            return
 
-        if state not in [self._STATE_IDLE,
-                         self._STATE_RUNNING,
-                         self._STATE_SLEEPING,
-                         self._STATE_SHUTTING_DOWN]:
+        if state not in self._STATES.keys():
             raise ValueError('Invalid Runtime State')
 
+        if self.is_waiting_to_stop and state != self.STATE_STOPPING:
+            LOGGER.warning('Attempt to set invalid state while waiting to '
+                           'shutdown: %s ', self._STATES[state])
+            return
+
         # Validate the next state for a shutting down process
-        if self.is_shutting_down and state != self._STATE_IDLE:
-            LOGGER.warning('Attempt to set invalid post shutdown state: %i',
-                           state)
+        if self.is_stopping and state != self.STATE_STOPPED:
+            LOGGER.warning('Attempt to set invalid post shutdown state: %s',
+                           self._STATES[state])
             return
 
         # Validate the next state for a running process
-        if self.is_running and state not in [self._STATE_SLEEPING,
-                                             self._STATE_SHUTTING_DOWN]:
-            LOGGER.warning('Attempt to set invalid post running state: %i',
-                           state)
+        if self.is_running and state not in [self.STATE_ACTIVE,
+                                             self.STATE_CONNECTING,
+                                             self.STATE_IDLE,
+                                             self.STATE_SLEEPING,
+                                             self.STATE_STOP_REQUESTED,
+                                             self.STATE_STOPPING]:
+            LOGGER.warning('Attempt to set invalid post running state: %s',
+                           self._STATES[state])
             return
 
         # Validate the next state for a sleeping process
-        if self.is_sleeping and state not in [self._STATE_RUNNING,
-                                              self._STATE_SHUTTING_DOWN]:
-            LOGGER.warning('Attempt to set invalid post sleeping state: %i',
-                           state)
+        if self.is_sleeping and state not in [self.STATE_ACTIVE,
+                                              self.STATE_IDLE,
+                                              self.STATE_STOP_REQUESTED,
+                                              self.STATE_STOPPING]:
+            LOGGER.warning('Attempt to set invalid post sleeping state: %s',
+                           self._STATES[state])
             return
 
         # Set the value
         self._state = state
 
         # Log the change
-        LOGGER.debug('Runtime state changed to %i', self._state)
+        LOGGER.debug('Runtime state changed to %s', self._STATES[self._state])
 
-    def _setup(self):  #pragma: no cover
+    def setup(self):
         """Override to provide any required setup steps."""
-        pass
+        if hasattr(self, '_setup'):
+            warnings.warn('Controller._setup is deprecated, '
+                          'extend Controller.setup',
+                          DeprecationWarning, stacklevel=2)
+            return self._setup()
 
-    def _shutdown(self):
-        """Override to implement shutdown steps."""
-        LOGGER.debug('Shutting down')
-
-        # Wait for the current run to finish
-        while self.is_running:
-            LOGGER.debug('Waiting for the _process to finish')
-            time.sleep(self._SLEEP_UNIT)
-
-        # Change the state to shutting down
-        self._set_state(self._STATE_SHUTTING_DOWN)
-
-        # Clear out the timer
-        signal.setitimer(signal.ITIMER_PROF, 0, 0)
-
-        # Call a method that may be overwritten to cleanly shutdown
-        self._cleanup()
-
-        # Change our state
-        self._shutdown_complete()
-
-    def _shutdown_complete(self):
-        """Sets the state back to idle when shutdown steps are complete."""
-        LOGGER.debug('Shutdown complete')
-        self._set_state(self._STATE_IDLE)
-
-    def _sleep(self):
+    def sleep(self):
         """Setup the next alarm to fire and then wait for it to fire."""
-        LOGGER.debug('Setting up to sleep')
-
         # Make sure that the application is not shutting down before sleeping
-        if self.is_shutting_down:
+        if self.is_stopping:
             LOGGER.debug('Not sleeping, application is trying to shutdown')
             return
 
         # Set the signal timer
-        signal.setitimer(signal.ITIMER_REAL, self._get_wake_interval(), 0)
+        signal.setitimer(signal.ITIMER_REAL, self.wake_interval, 0)
 
         # Toggle that we are running
-        self._set_state(self._STATE_SLEEPING)
+        self.set_state(self.STATE_SLEEPING)
 
-    def _wake(self, _signal, _frame):
+    @property
+    def state_description(self):
+        """Return the string description of our running state.
+
+        :rtype: str
+
+        """
+        return self._STATES[self._state]
+
+    def stop(self):
+        """Override to implement shutdown steps."""
+        LOGGER.info('Attempting to stop the process')
+        self.set_state(self.STATE_STOP_REQUESTED)
+
+        # Clear out the timer
+        signal.setitimer(signal.ITIMER_PROF, 0, 0)
+
+        # Wait for the current run to finish
+        while self.is_running and self.is_waiting_to_stop:
+            LOGGER.info('Waiting for the process to finish')
+            time.sleep(self.SLEEP_UNIT)
+
+        # Change the state to shutting down
+        if not self.is_stopping:
+            self.set_state(self.STATE_STOPPING)
+
+        # Call a method that may be overwritten to cleanly shutdown
+        self.cleanup()
+
+        # Change our state
+        self.stopped()
+
+    def stopped(self):
+        """Sets the state back to idle when shutdown steps are complete."""
+        LOGGER.debug('Shutdown complete')
+        self.set_state(self.STATE_STOPPED)
+
+    def wake(self, _signal, _frame):
         """Fired every time the alarm is signaled. If the app is not shutting
         or shutdown, it will attempt to process.
 
@@ -264,320 +440,138 @@ class Controller(object):
         LOGGER.debug('Application woke up')
 
         # Only run the code path if it's not shutting down or shutdown
-        if not self.is_shutting_down and not self.is_idle:
+        if not any([self.is_stopping, self.is_stopped, self.is_idle]):
 
             # Note that we're running
-            self._set_state(self._STATE_RUNNING)
+            self.set_state(self.STATE_ACTIVE)
 
             # Process actions for the application
-            self._process()
+            self.process()
+
+            # Exit out if the app is waiting to stop
+            if self.is_waiting_to_stop:
+                return self.set_state(self.STATE_STOPPING)
 
             # Wait until we're woken again
-            self._sleep()
-
-    def _write_pidfile(self):
-        """Write the pidfile out with the process number in the pidfile"""
-        with open(_get_pidfile_path(), "w") as handle:
-            handle.write(str(os.getpid()))
+            self.sleep()
+        else:
+            LOGGER.info('Exiting wake interval without sleeping again')
 
     @property
-    def is_idle(self):
-        """Returns True if the controller is idle
+    def wake_interval(self):
+        """Return the wake interval in seconds.
 
-        :rtype: bool
-
-        """
-        return self._state == self._STATE_IDLE
-
-    @property
-    def is_running(self):
-        """Returns True if the controller is running
-
-        :rtype: bool
+        :rtype: int
 
         """
-        return self._state == self._STATE_RUNNING
+        return self.application_config.get('wake_interval', self.WAKE_INTERVAL)
 
-    @property
-    def is_shutting_down(self):
-        """Returns True if the controller is shutting down
+    def _get_application_config(self):
+        """Get the configuration data the application itself
 
-        :rtype: bool
-
-        """
-        return self._state == self._STATE_SHUTTING_DOWN
-
-    @property
-    def is_sleeping(self):
-        """Returns True if the controller is sleeping
-
-        :rtype: bool
+        :rtype: dict
 
         """
-        return self._state == self._STATE_SLEEPING
+        warnings.warn("Deprecated, use application_config property",
+                      DeprecationWarning, stacklevel=2)
+        return self.application_config
 
-    def run(self):
-        """The core method for starting the application. Will setup logging,
-        toggle the runtime state flag, block on loop, then call shutdown.
+    def _get_config(self, key, default=None):
+        """Get the configuration data for the specified key
 
-        Redefine this method if you intend to use an IO Loop or some other
-        long running process.
+        :param str key: The key to get config data for
+        :rtype: any
 
         """
-        LOGGER.debug('Process running')
-        self._setup()
-        self._process()
-        signal.signal(signal.SIGALRM, self._wake)
-        self._sleep()
-        while self.is_running or self.is_sleeping:
-            signal.pause()
+        warnings.warn("Deprecated, use  Controller.config property",
+                      DeprecationWarning, stacklevel=2)
+        return self.application_config.get(key, default)
+
+    def _get_wake_interval(self):
+        """Return the wake interval in seconds.
+
+        :rtype: int
+
+        """
+        warnings.warn("Deprecated, use wake_interval property",
+                      DeprecationWarning, stacklevel=2)
+        return self.wake_interval
+
+    def _set_state(self, value):
+        """Deprecated method to be removed"""
+        warnings.warn('Deprecated, use Controller.set_state instead',
+                      DeprecationWarning, stacklevel=2)
+        self.set_state(value)
+
+    def _shutdown(self):
+        """Deprecated method to be removed"""
+        warnings.warn('Deprecated, use Controller.stop instead',
+                      DeprecationWarning, stacklevel=2)
+        self.stop()
+
+    def _shutdown_complete(self):
+        """Deprecated method to be removed"""
+        warnings.warn('Deprecated, use Controller.stopped instead',
+                      DeprecationWarning, stacklevel=2)
+        self.stopped()
+
+    def _sleep(self):
+        """Deprecated method to be removed"""
+        warnings.warn('Deprecated, use Controller.sleep instead',
+                      DeprecationWarning, stacklevel=2)
+
+        self.sleep()
 
 
-def _cli_options(option_callback):
-    """Setup the option parser and return the options and arguments.
-
-    :param method option_callback: If passed, is called after the foreground
-                                   option is added to the option parser
-                                   parameters. The parser will be passed
-                                   as an argument to the callback.
-    :rtype tuple: optparse.Values, list
-
-    """
-    parser = _new_option_parser()
-
-    # Set default attributes
-    parser.usage = "usage: %prog -c <configfile> [options]"
-    parser.version = "%%prog v%s" % _VERSION
-    parser.description = _DESCRIPTION
-
-    # Add default options
-    parser.add_option("-c", "--config",
-                      action="store",
-                      dest="configuration",
-                      default=False,
-                      help="Path to the configuration file.")
-
-    parser.add_option("-f", "--foreground",
-                      action="store_true",
-                      dest="foreground",
-                      default=False,
-                      help="Run interactively in console")
-
-    # If the option callback is specified, call it with the parser instance
-    if option_callback:
-        option_callback(parser)
-
-    # Parse our options and arguments
-    return parser.parse_args()
-
-
-def _get_daemon_config():
-    """Return the daemon specific configuration values
-
-    :rtype: dict
+class Logging(object):
+    """The Logging class is used for abstracting away dictConfig logging
+    semantics and can be used by sub-processes to ensure consistent logging
+    rule application.
 
     """
-    return get_configuration().get(_DAEMON) or dict()
-
-
-def _get_daemon_context_kargs():
-    """Return pre-configured keyword arguments for the DaemonContext
-
-    :rtype: dict
-
-    """
-    config = _get_daemon_config()
-
-    # If user is specified in the config, set it for the context
-    uid = None
-    if config.get('user'):
-        uid = _get_uid(config['user'])
-
-    # If group is specified in the config, set it for the context
-    gid = None
-    if config.get('group'):
-        gid = _get_gid(config['group'])
-
-    return {'detach_process': True,
-            'gid': gid,
-            'pidfile': lockfile.FileLock(path=_get_pidfile_path()),
-            'prevent_core': False,
-            'signal_map': {signal.SIGHUP: _on_sighup,
-                           signal.SIGTERM: _on_sigterm,
-                           signal.SIGUSR1: _on_sigusr1,
-                           signal.SIGUSR2: _on_sigusr2},
-            'uid': uid}
-
-
-def _get_gid(group):
-    """Return the group id for the specified group.
-
-    :param str group: The group name to get the id for
-    :rtype: int
-
-    """
-    return grp.getgrnam(group).gr_gid
-
-
-def _get_pidfile_path():
-    """Return the pidfile path for the daemon context.
-
-    :rtype: str
-
-    """
-    config = _get_daemon_config()
-    return config.get('pidfile', _PIDFILE) % {'app': _APPNAME}
-
-
-def _get_uid(username):
-    """Return the user id for the specified username
-
-    :param str username: The user to get the UID for
-    :rtype: int
-
-    """
-    return pwd.getpwnam(username).pw_uid
-
-
-def _load_config():
-    """Load the configuration from disk returning a dictionary object
-    representing the configuration values.
-
-    :rtype: dict
-    :raises: OSError
-
-    """
-    # Read the config file off the filesystem
-    content = _read_config_file()
-
-    # Return the parsed content
-    return _parse_yaml(content)
-
-
-def _new_option_parser():
-    """Return a new optparse.OptionParser instance.
-
-    :rtype: optparse.OptionParser
-
-    """
-    return optparse.OptionParser()
-
-
-def _on_sighup(_signal, _frame):
-    """Received when SIGHUP is received.
-
-    :param int _signal: The signal number
-    :param frame _frame: The stack frame when received
-
-    """
-    LOGGER.debug('SIGHUP received, notifying controller')
-    _CONTROLLER._on_sighup()
-
-
-def _on_sigterm(_signal, _frame):
-    """Received when SIGTERM is received.
-
-    :param int _signal: The signal number
-    :param frame frame: The stack frame when received
-
-    """
-    LOGGER.debug('SIGTERM received, notifying controller')
-    _CONTROLLER._on_sigterm()
-
-
-def _on_sigusr1(_signal, _frame):
-    """Received when SIGUSR1 is received.
-
-    :param int _signal: The signal number
-    :param frame frame: The stack frame when received
-
-    """
-    LOGGER.debug('SIGUSR1 received, notifying controller')
-    _CONTROLLER._on_sigusr1()
-
-
-def _on_sigusr2(_signal, _frame):
-    """Received when SIGUSR2 is received.
-
-    :param int _signal: The signal number
-    :param frame _frame: The stack frame when received
-
-    """
-    LOGGER.debug('SIGUSR2 received, notifying controller')
-    _CONTROLLER._on_sigusr2()
-
-
-def _parse_yaml(content):
-    """Parses a YAML string and returns a dictionary object.
-
-    :param str content: The YAML content
-    :rtype: dict
-
-    """
-    return yaml.load(content)
-
-
-def _read_config_file():
-    """Return the contents of the file specified in _CONFIG_FILE.
-
-    :rtype: str
-
-    """
-    with open(_CONFIG_FILE, 'r') as handle:
-        return handle.read()
-
-
-def _remove_debug_only_from_handlers(logging_config):
-    """Iterate through each handler removing the invalid dictConfig key of
-    debug_only.
-
-    :param dict logging_config: The logging configuration for dictConfig
-
-    """
-    for handler in logging_config['handlers']:
-        if 'debug_only' in logging_config['handlers'][handler]:
-            del logging_config['handlers'][handler]['debug_only']
-
-
-def _remove_debug_only_handlers(logging_config):
-    """Remove any handlers with an attribute of debug_only that is True and
-    remove the references to said handlers from any loggers that are referencing
-    them.
-
-    :param dict logging_config: The logging configuration for dictConfig
-
-    """
-    remove = list()
-    for handler in logging_config['handlers']:
-        if logging_config['handlers'][handler].get('debug_only'):
-            remove.append(handler)
-
-    # Iterate through the handlers to remove and remove them
-    for handler in remove:
-        del logging_config['handlers'][handler]
-        _remove_handler_from_loggers(logging_config['loggers'], handler)
-
-
-def _remove_handler_from_loggers(loggers, handler):
-    """Remove any reference of the specified handler from the loggers in the
-    logging_config dictionary.
-
-    :param dict loggers: The loggers section of the logging configuration
-    :param str handler: The name of the handler to remove references to
-
-    """
-    for LOGGER in loggers:
-        try:
-            loggers[LOGGER]['handlers'].remove(handler)
-        except ValueError:
-            pass
-
-
-def _remove_pidfile():
-    """Remove the pidfile from the filesystem"""
-    pidfile_path = _get_pidfile_path()
-    if os.path.exists(pidfile_path):
-        os.unlink(pidfile_path)
+    DEBUG_ONLY = 'debug_only'
+    HANDLERS = 'handlers'
+
+    def __init__(self, configuration, debug):
+        """Create a new instance of the Logging object passing in the
+        DictConfig syntax logging configuration and a debug flag.
+
+        :param dict configuration: The logging configuration
+        :param bool debug: Toggles use of debug_only loggers
+
+        """
+        self.config = configuration
+        if not debug:
+            self.remove_debug_only_handlers()
+        self.remove_debug_only_from_handlers()
+        logging.captureWarnings(True)
+
+    def configure(self):
+        """Configure logging using dictConfig"""
+        dictConfig(self.config)
+
+    def remove_debug_only_from_handlers(self):
+        """Iterate through each handler removing the invalid dictConfig key of
+        debug_only.
+
+        """
+        for handler in self.config[self.HANDLERS]:
+            if self.DEBUG_ONLY in self.config[self.HANDLERS][handler]:
+                del self.config[self.HANDLERS][handler][self.DEBUG_ONLY]
+
+    def remove_debug_only_handlers(self):
+        """Remove any handlers with an attribute of debug_only that is True and
+        remove the references to said handlers from any loggers that are
+        referencing them.
+
+        """
+        remove = list()
+        for handler in self.config[self.HANDLERS]:
+            if self.config[self.HANDLERS][handler].get('debug_only'):
+                remove.append(handler)
+        for handler in remove:
+            del self.config[self.HANDLERS][handler]
+        self.remove_debug_only_from_handlers()
 
 
 def add_config_key(key):
@@ -586,8 +580,8 @@ def add_config_key(key):
     :param str key: The key to add to the configuration keys
 
     """
-    global _CONFIG_KEYS
-    _CONFIG_KEYS.append(key)
+    global CONFIG_KEYS
+    CONFIG_KEYS.append(key)
 
 
 def get_logging_config():
@@ -596,7 +590,7 @@ def get_logging_config():
     :rtype: dict
 
     """
-    return get_configuration().get(_LOGGING)
+    return get_configuration().get(LOGGING)
 
 
 def get_configuration():
@@ -610,7 +604,7 @@ def get_configuration():
     configuration = _load_config()
 
     # Validate all the top-level items are there
-    for key in _CONFIG_KEYS:
+    for key in CONFIG_KEYS:
         if key not in configuration:
             raise ValueError('Missing required configuration parameter: %s',
                              key)
@@ -621,7 +615,7 @@ def get_configuration():
 
 def run(controller, option_callback=None):
     """Called by the implementing application to run the application.
-    ControllerClass is a class that extends cliapp.Controller.
+    ControllerClass is a class that extends clihelper.Controller.
 
     :param Controller controller: Implementing class extending Controller
     :param method option_callback: If passed, is called after the foreground
@@ -638,8 +632,11 @@ def run(controller, option_callback=None):
         sys.stderr.write('Error: %s\n' % error)
         sys.exit(1)
 
+    # Setup logging for foreground operations
+    setup_logging(options.foreground)
+
     # Run the process with the daemon context
-    kwargs = _get_daemon_context_kargs()
+    kwargs = _get_daemon_context_kargs(options.foreground)
     if options.foreground:
         kwargs['detach_process'] = False
         kwargs['stderr'] = sys.stderr
@@ -649,23 +646,29 @@ def run(controller, option_callback=None):
     # This will be used by the caller to daemonize the application
     try:
         with daemon.DaemonContext(**kwargs):
-            LOGGER.debug('Running interactively')
-            setup_logging(options.foreground)
+            if not options.foreground:
+                setup_logging(options.foreground)
             process = controller(options, arguments)
             set_controller(process)
+            if not options.foreground:
+                _write_pidfile()
             try:
                 process.run()
             except KeyboardInterrupt:
                 LOGGER.info('CTRL-C caught, shutting down')
-                process._shutdown()
-            _remove_pidfile()
+                process.stop()
+            if not options.foreground:
+                _remove_pidfile()
     except Exception as error:
-        sys.stdout.write('Exception: %r\n\n' % error)
-        with open('/tmp/clihelper-exceptions.log', 'a') as handle:
-            handle.write(repr(error))
-            output = traceback.format_exception(*sys.exc_info())
-            [sys.stdout.write(line) for line in output]
-        sys.exit(1)
+        if WRITE_EXCEPTION_LOG:
+            sys.stdout.write('Exception: %r\n\n' % error)
+            with open(EXCEPTION_LOG, 'a') as handle:
+                handle.write(repr(error))
+                output = traceback.format_exception(*sys.exc_info())
+                _dev_null = [sys.stdout.write(line) for line in output]
+            sys.exit(1)
+        if not options.foreground:
+            _remove_pidfile()
 
 
 def set_appname(appname):
@@ -674,8 +677,8 @@ def set_appname(appname):
     :param str appname: The application name
 
     """
-    global _APPNAME
-    _APPNAME = appname
+    global APPNAME
+    APPNAME = appname
 
 
 def set_configuration_file(filename):
@@ -685,12 +688,11 @@ def set_configuration_file(filename):
     :raises: ValueError
 
     """
-    global _CONFIG_FILE
+    global CONFIG_FILE
 
     # Make sure the configuration file was specified
     if not filename:
-        sys.stderr.write('Missing required configuration file value\n' %
-                         filename)
+        sys.stderr.write('Missing required configuration file value\n')
         sys.exit(1)
 
     filename = os.path.abspath(filename)
@@ -700,7 +702,7 @@ def set_configuration_file(filename):
         sys.exit(1)
 
     # Set the config file to the global variable
-    _CONFIG_FILE = filename
+    CONFIG_FILE = filename
 
 
 def set_controller(controller):
@@ -709,8 +711,8 @@ def set_controller(controller):
     :param Controller controller: The Controller object
 
     """
-    global _CONTROLLER
-    _CONTROLLER = controller
+    global CONTROLLER
+    CONTROLLER = controller
 
 
 def set_description(description):
@@ -719,8 +721,8 @@ def set_description(description):
     :param str description: The app description
 
     """
-    global _DESCRIPTION
-    _DESCRIPTION = description
+    global DESCRIPTION
+    DESCRIPTION = description
 
 
 def set_version(version):
@@ -729,8 +731,8 @@ def set_version(version):
     :param str version: The version #
 
     """
-    global _VERSION
-    _VERSION = version
+    global VERSION
+    VERSION = version
 
 
 def setup(appname, description, version):
@@ -753,15 +755,210 @@ def setup_logging(debug):
     :param bool debug: The app is in debug mode
 
     """
-    # Get the configuration
-    logging_config = get_logging_config()
+    process_logging = Logging(get_logging_config(), debug)
+    process_logging.configure()
 
-    # Process debug only handlers
-    if not debug:
-        _remove_debug_only_handlers(logging_config)
 
-    # Remove any references to debug_only
-    _remove_debug_only_from_handlers(logging_config)
+# Internal Methods
 
-    # Run the Dictionary Configuration
-    dictConfig(logging_config)
+def _cli_options(option_callback):
+    """Setup the option parser and return the options and arguments.
+
+    :param method option_callback: If passed, is called after the foreground
+                                   option is added to the option parser
+                                   parameters. The parser will be passed
+                                   as an argument to the callback.
+    :rtype tuple: optparse.Values, list
+
+    """
+    parser = _new_option_parser()
+
+    # Set default attributes
+    parser.usage = "usage: %prog -c <configfile> [options]"
+    parser.version = "%%prog v%s" % VERSION
+    parser.description = DESCRIPTION
+
+    # Add default options
+    parser.add_option("-c", "--config",
+                      action="store",
+                      dest="configuration",
+                      default=False,
+                      help="Path to the configuration file")
+
+    parser.add_option("-f", "--foreground",
+                      action="store_true",
+                      dest="foreground",
+                      default=False,
+                      help="Run interactively in console")
+
+    # If the option callback is specified, call it with the parser instance
+    if option_callback:
+        option_callback(parser)
+
+    # Parse our options and arguments
+    return parser.parse_args()
+
+
+def _get_daemon_config():
+    """Return the daemon specific configuration values
+
+    :rtype: dict
+
+    """
+    return get_configuration().get(DAEMON) or dict()
+
+
+def _get_daemon_context_kargs(foreground=False):
+    """Return pre-configured keyword arguments for the DaemonContext
+
+    :rtype: dict
+
+    """
+    config = _get_daemon_config()
+    uid, gid = None, None
+    if foreground:
+        LOGGER.info('Running interactively, not switching user or group')
+    else:
+        if config.get('user'):
+            uid = _get_uid(config['user'])
+        if config.get('group'):
+            gid = _get_gid(config['group'])
+
+    kwargs = {'detach_process': True,
+              'gid': gid,
+              'prevent_core': config.get('prevent_core', foreground),
+              'signal_map': {signal.SIGHUP: _on_sighup,
+                             signal.SIGTERM: _on_sigterm,
+                             signal.SIGUSR1: _on_sigusr1,
+                             signal.SIGUSR2: _on_sigusr2},
+              'uid': uid}
+    if not foreground:
+        kwargs['pidfile'] = lockfile.FileLock(path=_get_pidfile_path())
+    return kwargs
+
+
+def _get_gid(group):
+    """Return the group id for the specified group.
+
+    :param str group: The group name to get the id for
+    :rtype: int
+
+    """
+    return grp.getgrnam(group).gr_gid
+
+
+def _get_pidfile_path():
+    """Return the pidfile path for the daemon context.
+
+    :rtype: str
+
+    """
+    config = _get_daemon_config()
+    return config.get('pidfile', PIDFILE) % {'app': APPNAME}
+
+
+def _get_uid(username):
+    """Return the user id for the specified username
+
+    :param str username: The user to get the UID for
+    :rtype: int
+
+    """
+    return pwd.getpwnam(username).pw_uid
+
+
+def _load_config():
+    """Load the configuration from disk returning a dictionary object
+    representing the configuration values.
+
+    :rtype: dict
+    :raises: OSError
+
+    """
+    return _parse_yaml(_read_config_file())
+
+
+def _new_option_parser():
+    """Return a new optparse.OptionParser instance.
+
+    :rtype: optparse.OptionParser
+
+    """
+    return optparse.OptionParser()
+
+
+def _on_sighup(_signal, _frame):
+    """Received when SIGHUP is received.
+
+    :param int _signal: The signal number
+    :param frame _frame: The stack frame when received
+
+    """
+    LOGGER.debug('SIGHUP received, notifying controller')
+    CONTROLLER.on_sighup()
+
+
+def _on_sigterm(_signal, _frame):
+    """Received when SIGTERM is received.
+
+    :param int _signal: The signal number
+    :param frame _frame: The stack frame when received
+
+    """
+    LOGGER.debug('SIGTERM received, notifying controller')
+    CONTROLLER.on_sigterm()
+
+
+def _on_sigusr1(_signal, _frame):
+    """Received when SIGUSR1 is received.
+
+    :param int _signal: The signal number
+    :param frame _frame: The stack frame when received
+
+    """
+    LOGGER.debug('SIGUSR1 received, notifying controller')
+    CONTROLLER.on_sigusr1()
+
+
+def _on_sigusr2(_signal, _frame):
+    """Received when SIGUSR2 is received.
+
+    :param int _signal: The signal number
+    :param frame _frame: The stack frame when received
+
+    """
+    LOGGER.debug('SIGUSR2 received, notifying controller')
+    CONTROLLER.on_sigusr2()
+
+
+def _parse_yaml(content):
+    """Parses a YAML string and returns a dictionary object.
+
+    :param str content: The YAML content
+    :rtype: dict
+
+    """
+    return yaml.load(content)
+
+
+def _read_config_file():
+    """Return the contents of the file specified in _CONFIG_FILE.
+
+    :rtype: str
+
+    """
+    with open(CONFIG_FILE, 'r') as handle:
+        return handle.read()
+
+
+def _remove_pidfile():
+    """Remove the pidfile from the filesystem"""
+    pidfile_path = _get_pidfile_path()
+    if os.path.exists(pidfile_path):
+        os.unlink(pidfile_path)
+
+
+def _write_pidfile():
+    """Write the pidfile out with the process number in the pidfile"""
+    with open(_get_pidfile_path(), "w") as handle:
+        handle.write(str(os.getpid()))

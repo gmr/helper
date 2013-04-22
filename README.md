@@ -39,18 +39,15 @@ clihelper is availble via pypi.python.org. Using pip to install:
 ## Example Use
 
     import clihelper
-    import logging
-
-    logger = logging.getLogger(__name__)
 
 
     class MyController(clihelper.Controller):
 
-        def _setup(self):
+        def setup(self):
             """This method is called when the cli.run() method is invoked."""
             pass
 
-        def _process(self):
+        def process(self):
             """This method is called after every sleep interval. If the intention
             is to use an IOLoop instead of sleep interval based daemon, override
             the run method.
@@ -76,9 +73,9 @@ configuration.
         wake_interval: 60
 
     Daemon:
-        user: daemon
+        user: myapp
         group: daemon
-        pidfile: /var/run/myapp
+        pidfile: /var/run/myapp.pid
 
     Logging:
         version: 1
@@ -87,7 +84,7 @@ configuration.
               format: '%(levelname) -10s %(asctime)s %(process)-6d %(processName) -15s %(name) -10s %(funcName) -20s: %(message)s'
               datefmt: '%Y-%m-%d %H:%M:%S'
             syslog:
-              format: " %(levelname)s <PID %(process)d:%(processName)s> %(name)s.%(funcName)s(): %(message)s"
+              format: '%(levelname)s <PID %(process)d:%(processName)s> %(name)s.%(funcName)s(): %(message)s'
         filters:
         handlers:
             console:
@@ -111,7 +108,7 @@ configuration.
         incremental: false
 
 Any configuration key under Application is available to you via the
-Controller._get_config method.
+Controller.config property.
 
 * Note that the debug_only node of the Logging > handlers > console section is
 not part of the standard dictConfig format. Please see the "Logging Caveats" section
@@ -148,7 +145,7 @@ specifically.
 The following snippet grabs the Application -> wake_interval value and assumes
 you would be calling self._get_config from your extended Controller.
 
-    wake_interval = self._get_config('wake_interval')
+    wake_interval = self.config.get('wake_interval')
 
 ## Adding command line options
 
@@ -193,7 +190,7 @@ your child processes appropriately.
 In the event that your application receives a TERM signal, it will change the
 internal state of the Controller class indicating that the application is
 shutting down. This may be checked for by checking for a True value from the
-attribute Controller.is_shutting_down. During this type of shutdown and
+attribute Controller.is_stopping. During this type of shutdown and
 if you are running your application interactively and CTRL-C is pressed,
 Controller._shutdown will be invoked. This method is meant to be extended
 by your application for the purposes of cleanly shutting down your application.
@@ -201,24 +198,24 @@ by your application for the purposes of cleanly shutting down your application.
 ### Handling SIGHUP
 
 The behavior in SIGHUP is to cleanly shutdown the application and then start it
-back up again. It will, like with SIGTERM, call the Controller._shutdown method.
+back up again. It will, like with SIGTERM, call the Controller.stop method.
 Once the shutdown is complete, it will clear the internal state and configuration
-and then invoke Controller._run.
+and then invoke Controller.run.
 
 ### Handling SIGUSR1
 
 If you would like to reload the configuration, sending a SIGUSR1 signal to the
-parent process of the application will invoke the Controller._reload_configuration
+parent process of the application will invoke the Controller.reload_configuration
 method, freeing the previously help configuration data from memory and reloading
 the configuration file from disk. Because it may be desirable to change runtime
 configuration without restarting the application, it is adviced to use the
-Controller._get_config method instead of holding config values as attributes.
+Controller.config property instead of holding config values as attributes.
 
 ### Handling SIGUSR2
 
 This is an unimplemented method within the Controller class and is registered
 for convenience. If have need for custom signal handling, redefine the
-Controller._on_signusr2 method in your child class.
+Controller.on_signusr2 method in your child class.
 
 ## Logging
 
@@ -227,8 +224,8 @@ Controller._on_signusr2 method in your child class.
 In order to allow for customizable console output when running in the foreground
 and no console output when daemonized, a "debug_only" node has been added to the
 standard dictConfig format in the handler section. This method is evaluated in
-the clihelper._setup_logging method and removed, if present, prior to passing
-the dictionary to dictConfig if present.
+the clihelper.Logging and removed, if present, prior to passing the dictionary to
+dictConfig if present.
 
 If the value is set to true and the application is not running in the foreground,
 the configuration for the handler and references to it will be removed from the
@@ -241,15 +238,19 @@ to the terminal, ensure that you have created a logger section in your configura
 for your controller. For example if your Controller instance is named MyController,
 make sure there is a MyController logger in the logging configuration.
 
+In addition, by default clihelper will write any unhandled exceptions to a file in
+/tmp/clihelper-exceptions.log. You can change the path by altering clihelper.EXCEPTION_LOG
+or turn this behavior off with clihelper.WRITE_EXCEPTION_LOG = False.
+
 ## Requirements
 
- - logutils
+ - logutils (Python 2.6)
  - python-daemon
  - pyyaml
 
 ## License
 
-Copyright (c) 2012, MeetMe
+Copyright (c) 2012-2013, MeetMe
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
