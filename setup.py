@@ -9,9 +9,10 @@ if float('%s.%s' % (major, minor)) < 2.7:
     requirements.append('logutils')
     tests_require.append('unittest2')
 
+console_scripts = ['clihelper-init=clihelper.initialize:main']
 
 setup(name='clihelper',
-      version='1.6.0',
+      version='1.6.1',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '
@@ -19,7 +20,7 @@ setup(name='clihelper',
       author='Gavin M. Roy',
       author_email='gmr@meetme.com',
       url='https://github.com/gmr/clihelper',
-      py_modules=['clihelper'],
+      packages=['clihelper'],
       install_requires=requirements,
       tests_require=tests_require,
       classifiers=[
@@ -30,4 +31,5 @@ setup(name='clihelper',
           'Topic :: Software Development :: Libraries',
           'Topic :: Software Development :: Libraries :: Python Modules',
           'License :: OSI Approved :: BSD License'],
+      entry_points={'console_scripts': console_scripts},
       zip_safe=True)

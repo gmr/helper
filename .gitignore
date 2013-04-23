@@ -5,3 +5,6 @@ atlassian-ide-plugin.xml
 example/example.log*
 clihelper.egg-info
 dist
+clihelper-init.py
+myapp
+docs/_build

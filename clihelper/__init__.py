@@ -2,10 +2,7 @@
 support.
 
 """
-__author__ = 'Gavin M. Roy'
-__email__ = 'gmr@meetme.com'
-__since__ = '2012-04-11'
-__version__ = '1.6.0'
+__version__ = '1.6.1'
 
 import daemon
 import grp
@@ -29,7 +26,6 @@ import yaml
 APPNAME = 'clihelper'
 APPLICATION = 'Application'
 DAEMON = 'Daemon'
-EXCEPTION_LOG = '/tmp/clihelper-exceptions.log'
 LOGGING = 'Logging'
 CONFIG_KEYS = [APPLICATION, DAEMON, LOGGING]
 CONFIG_FILE = None
@@ -37,40 +33,68 @@ CONTROLLER = None
 DESCRIPTION = 'Command Line Daemon'
 PIDFILE = '/var/run/%(app)s.pid'
 VERSION = __version__
+
+#: The full path to the exception log file for unwritten exceptions
+EXCEPTION_LOG = '/tmp/clihelper-exceptions.log'
+
+#: Change to False to not write unhandled exceptions to the EXCEPTION_LOG file
 WRITE_EXCEPTION_LOG = True
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Controller(object):
-    """Extend the Controller class with your own application implementing the
-    Controller._process method. If you do not want to use sleep based looping
-    but rather an IOLoop or some other long-lived blocking loop, redefine
-    the Controller._loop method.
+    """Extend this class to implement your core application controller. Key
+    methods to implement are Controller.setup, Controller.process and Controller.cleanup.
+
+    If you do not want to use the sleep/wake structure but rather something
+    like a blocking IOLoop, overwrite the Controller.run method.
 
     """
+    #: When shutting down, how long should sleeping block the interpreter while
+    #: waiting for the state to indicate the class is no longer active.
     SLEEP_UNIT = 0.5
-    WAKE_INTERVAL = 60  # How many seconds to sleep before waking up
 
-    # State constants
+    #: How often should :meth:`Controller.process` be invoked
+    WAKE_INTERVAL = 60
+
+    #: Initializing state is only set during initial object creation
     STATE_INITIALIZING = 0x01
-    STATE_CONNECTING = 0x02
-    STATE_SLEEPING = 0x03
-    STATE_IDLE = 0x04
-    STATE_ACTIVE = 0x05
-    STATE_STOP_REQUESTED = 0x06
-    STATE_STOPPING = 0x07
-    STATE_STOPPED = 0x08
+
+    #: When clihelper has set the signal timer and is paused, it will be in the
+    #: sleeping state.
+    STATE_SLEEPING = 0x02
+
+    #: The idle state is available to implementing classes to indicate that
+    #: while they are not actively performing tasks, they are not sleeping.
+    #: Objects in the idle state can be shutdown immediately.
+    STATE_IDLE = 0x03
+
+    #: The active state should be set whenever the implementing class is
+    #: performing a task that can not be interrupted.
+    STATE_ACTIVE = 0x04
+
+    #: The stop requested state is set when a signal is received indicating the
+    #: process should stop. The app will invoke the :meth:`Controller.stop`
+    #: method which will wait for the process state to change from STATE_ACTIVE
+    STATE_STOP_REQUESTED = 0x05
+
+
+    #: Once the application has started to shutdown, it will set the state to
+    #: stopping and then invoke the :meth:`Controller.stopping` method.
+    STATE_STOPPING = 0x06
+
+    #: Once the application has fully stopped, the state is set to stopped.
+    STATE_STOPPED = 0x07
 
     # For reverse lookup
     _STATES = {0x01: 'Initializing',
-               0x02: 'Connecting',
-               0x03: 'Sleeping',
-               0x04: 'Idle',
-               0x05: 'Active',
-               0x06: 'Stop Requested',
-               0x07: 'Stopping',
-               0x08: 'Stopped'}
+               0x02: 'Sleeping',
+               0x03: 'Idle',
+               0x04: 'Active',
+               0x05: 'Stop Requested',
+               0x06: 'Stopping',
+               0x07: 'Stopped'}
 
     def __init__(self, options, arguments):
         """Create an instance of the controller passing in the debug flag,
@@ -116,7 +140,8 @@ class Controller(object):
 
     @property
     def config(self):
-        """Return the configuration dictionary
+        """Property method that returns the full configuration as a dict with
+        the top-level Application, Daemon, and Logging sections.
 
         :rtype: dict
 
@@ -124,8 +149,19 @@ class Controller(object):
         return self._config
 
     @property
+    def current_state(self):
+        """Property method that return the string description of the runtime
+        state.
+
+        :rtype: str
+
+        """
+        return self._STATES[self._state]
+
+    @property
     def is_active(self):
-        """Returns a bool specifying if the process is currently active.
+        """Property method that returns a bool specifying if the process is
+        currently active.
 
         :rtype: bool
 
@@ -133,17 +169,9 @@ class Controller(object):
         return self._state == self.STATE_ACTIVE
 
     @property
-    def is_connecting(self):
-        """Returns a bool specifying if the process is currently connecting.
-
-        :rtype: bool
-
-        """
-        return self._state == self.STATE_CONNECTING
-
-    @property
     def is_idle(self):
-        """Returns a bool specifying if the process is currently idle.
+        """Property method that returns a bool specifying if the process is
+        currently idle.
 
         :rtype: bool
 
@@ -152,7 +180,8 @@ class Controller(object):
 
     @property
     def is_initializing(self):
-        """Returns a bool specifying if the process is currently initializing.
+        """Property method that returns a bool specifying if the process is
+        currently initializing.
 
         :rtype: bool
 
@@ -161,19 +190,21 @@ class Controller(object):
 
     @property
     def is_running(self):
-        """Returns a bool determining if the process is in a running state or
-        not
+        """Property method that returns a bool specifying if the process is
+        currently running. This will return true if the state is active, idle
+        or initializing.
 
         :rtype: bool
 
         """
         return self._state in [self.STATE_ACTIVE,
-                               self.STATE_CONNECTING,
+                               self.STATE_IDLE,
                                self.STATE_INITIALIZING]
 
     @property
     def is_sleeping(self):
-        """Returns True if the controller is sleeping
+        """Property method that returns a bool specifying if the process is
+        currently sleeping.
 
         :rtype: bool
 
@@ -182,7 +213,8 @@ class Controller(object):
 
     @property
     def is_stopped(self):
-        """Returns a bool determining if the process is stopped
+        """Property method that returns a bool specifying if the process is
+        stopped.
 
         :rtype: bool
 
@@ -191,7 +223,8 @@ class Controller(object):
 
     @property
     def is_stopping(self):
-        """Returns a bool determining if the process is stopping
+        """Property method that returns a bool specifying if the process is
+        stopping.
 
         :rtype: bool
 
@@ -200,7 +233,8 @@ class Controller(object):
 
     @property
     def is_waiting_to_stop(self):
-        """Designates if the process is waiting to start shutdown
+        """Property method that returns a bool specifying if the process is
+        waiting for the current process to finish so it can stop.
 
         :rtype: bool
 
@@ -209,7 +243,7 @@ class Controller(object):
 
     @property
     def logging_config(self):
-        """Return the logging section of the configuration
+        """Return the logging section of the configuration file as a dict.
 
         :rtype: dict
 
@@ -218,7 +252,8 @@ class Controller(object):
 
     def on_sighup(self):
         """Called when SIGHUP is received, shutdown internal runtime state,
-        reloads configuration and then calls Controller.run().
+        reloads configuration and then calls Controller.run(). Can be extended
+        to implement other behaviors.
 
         """
         LOGGER.info('Received SIGHUP, restarting internal state')
@@ -233,7 +268,10 @@ class Controller(object):
             self.run()
 
     def on_sigterm(self):
-        """Called when SIGTERM is received, override to implement."""
+        """Called when SIGTERM is received, calling self.stop(). Override to
+        implement a different behavior.
+
+        """
         LOGGER.info('Received SIGTERM, initiating shutdown')
         if hasattr(self, '_on_sigterm'):
             warnings.warn('Controller._on_sigterm is deprecated, '
@@ -245,7 +283,7 @@ class Controller(object):
 
     def on_sigusr1(self):
         """Called when SIGUSR1 is received. Reloads configuration and reruns
-        the LOGGER/logging setup.
+        the LOGGER/logging setup. Override to implement a different behavior.
 
         """
         LOGGER.info('Received SIGUSR1, reloading configuration')
@@ -263,7 +301,10 @@ class Controller(object):
                 signal.pause()
 
     def on_sigusr2(self):
-        """Called when SIGUSR2 is received, override to implement."""
+        """Called when SIGUSR2 is received, does not have any attached
+        behavior. Override to implement a behavior for this signal.
+
+        """
         LOGGER.info('Received SIGUSR2')
 
         if hasattr(self, '_on_sigusr2'):
@@ -291,14 +332,13 @@ class Controller(object):
     def reload_configuration(self):
         """Reload the configuration by creating a new instance of the
         Configuration object and re-setup logging. Extend behavior by
-        overriding object while calling super.
+        overriding object while calling super to ensure the internal config
+        variables are populated correctly.
 
         """
         # Delete the config object, creating a new one
         del self._config
         self._config = get_configuration()
-
-        # Re-Setup logging
         setup_logging(self._debug)
 
     def run(self):
@@ -309,16 +349,25 @@ class Controller(object):
         long running process.
 
         """
-        LOGGER.debug('Process running')
+        LOGGER.info('%s %s started', APPNAME, VERSION)
         self.setup()
         self.process()
-        signal.signal(signal.SIGALRM, self.wake)
-        self.sleep()
+        signal.signal(signal.SIGALRM, self._wake)
+        self._sleep()
         while self.is_running or self.is_sleeping:
             signal.pause()
 
     def set_state(self, state):
-        """Set the runtime state of the Controller.
+        """Set the runtime state of the Controller. Use the internal constants
+        to ensure proper state values:
+
+        - :attr:`Controller.STATE_INITIALIZING`
+        - :attr:`Controller.STATE_ACTIVE`
+        - :attr:`Controller.STATE_IDLE`
+        - :attr:`Controller.STATE_SLEEPING`
+        - :attr:`Controller.STATE_STOP_REQUESTED`
+        - :attr:`Controller.STATE_STOPPING`
+        - :attr:`Controller.STATE_STOPPED`
 
         :param int state: The runtime state
         :raises: ValueError
@@ -347,7 +396,6 @@ class Controller(object):
 
         # Validate the next state for a running process
         if self.is_running and state not in [self.STATE_ACTIVE,
-                                             self.STATE_CONNECTING,
                                              self.STATE_IDLE,
                                              self.STATE_SLEEPING,
                                              self.STATE_STOP_REQUESTED,
@@ -379,28 +427,6 @@ class Controller(object):
                           DeprecationWarning, stacklevel=2)
             return self._setup()
 
-    def sleep(self):
-        """Setup the next alarm to fire and then wait for it to fire."""
-        # Make sure that the application is not shutting down before sleeping
-        if self.is_stopping:
-            LOGGER.debug('Not sleeping, application is trying to shutdown')
-            return
-
-        # Set the signal timer
-        signal.setitimer(signal.ITIMER_REAL, self.wake_interval, 0)
-
-        # Toggle that we are running
-        self.set_state(self.STATE_SLEEPING)
-
-    @property
-    def state_description(self):
-        """Return the string description of our running state.
-
-        :rtype: str
-
-        """
-        return self._STATES[self._state]
-
     def stop(self):
         """Override to implement shutdown steps."""
         LOGGER.info('Attempting to stop the process')
@@ -422,44 +448,11 @@ class Controller(object):
         self.cleanup()
 
         # Change our state
-        self.stopped()
-
-    def stopped(self):
-        """Sets the state back to idle when shutdown steps are complete."""
-        LOGGER.debug('Shutdown complete')
-        self.set_state(self.STATE_STOPPED)
-
-    def wake(self, _signal, _frame):
-        """Fired every time the alarm is signaled. If the app is not shutting
-        or shutdown, it will attempt to process.
-
-        :param int _signal: The signal number
-        :param frame _frame: The stack frame when received
-
-        """
-        LOGGER.debug('Application woke up')
-
-        # Only run the code path if it's not shutting down or shutdown
-        if not any([self.is_stopping, self.is_stopped, self.is_idle]):
-
-            # Note that we're running
-            self.set_state(self.STATE_ACTIVE)
-
-            # Process actions for the application
-            self.process()
-
-            # Exit out if the app is waiting to stop
-            if self.is_waiting_to_stop:
-                return self.set_state(self.STATE_STOPPING)
-
-            # Wait until we're woken again
-            self.sleep()
-        else:
-            LOGGER.info('Exiting wake interval without sleeping again')
+        self._stopped()
 
     @property
     def wake_interval(self):
-        """Return the wake interval in seconds.
+        """Property method that returns the wake interval in seconds.
 
         :rtype: int
 
@@ -513,14 +506,53 @@ class Controller(object):
         """Deprecated method to be removed"""
         warnings.warn('Deprecated, use Controller.stopped instead',
                       DeprecationWarning, stacklevel=2)
-        self.stopped()
+        self._stopped()
 
     def _sleep(self):
-        """Deprecated method to be removed"""
-        warnings.warn('Deprecated, use Controller.sleep instead',
-                      DeprecationWarning, stacklevel=2)
+        """Setup the next alarm to fire and then wait for it to fire."""
+        # Make sure that the application is not shutting down before sleeping
+        if self.is_stopping:
+            LOGGER.debug('Not sleeping, application is trying to shutdown')
+            return
 
-        self.sleep()
+        # Set the signal timer
+        signal.setitimer(signal.ITIMER_REAL, self.wake_interval, 0)
+
+        # Toggle that we are running
+        self.set_state(self.STATE_SLEEPING)
+
+    def _stopped(self):
+        """Sets the state back to idle when shutdown steps are complete."""
+        LOGGER.debug('Application stopped')
+        self.set_state(self.STATE_STOPPED)
+
+    def _wake(self, _signal, _frame):
+        """Fired every time the alarm is signaled. If the app is not shutting
+        or shutdown, it will attempt to process.
+
+        :param int _signal: The signal number
+        :param frame _frame: The stack frame when received
+
+        """
+        LOGGER.debug('Application woke up')
+
+        # Only run the code path if it's not shutting down or shutdown
+        if not any([self.is_stopping, self.is_stopped, self.is_idle]):
+
+            # Note that we're running
+            self.set_state(self.STATE_ACTIVE)
+
+            # Process actions for the application
+            self.process()
+
+            # Exit out if the app is waiting to stop
+            if self.is_waiting_to_stop:
+                return self.set_state(self.STATE_STOPPING)
+
+            # Wait until the process is to be woken again
+            self._sleep()
+        else:
+            LOGGER.info('Exiting wake interval without sleeping again')
 
 
 class Logging(object):
@@ -542,15 +574,18 @@ class Logging(object):
         """
         self.config = configuration
         if not debug:
-            self.remove_debug_only_handlers()
-        self.remove_debug_only_from_handlers()
+            self._remove_debug_only_handlers()
+        self._remove_debug_only_from_handlers()
         logging.captureWarnings(True)
 
     def configure(self):
-        """Configure logging using dictConfig"""
+        """Configure the Python logging runtime with the configuration values
+        passed in when creating the object.
+
+        """
         dictConfig(self.config)
 
-    def remove_debug_only_from_handlers(self):
+    def _remove_debug_only_from_handlers(self):
         """Iterate through each handler removing the invalid dictConfig key of
         debug_only.
 
@@ -559,7 +594,7 @@ class Logging(object):
             if self.DEBUG_ONLY in self.config[self.HANDLERS][handler]:
                 del self.config[self.HANDLERS][handler][self.DEBUG_ONLY]
 
-    def remove_debug_only_handlers(self):
+    def _remove_debug_only_handlers(self):
         """Remove any handlers with an attribute of debug_only that is True and
         remove the references to said handlers from any loggers that are
         referencing them.
@@ -571,7 +606,7 @@ class Logging(object):
                 remove.append(handler)
         for handler in remove:
             del self.config[self.HANDLERS][handler]
-        self.remove_debug_only_from_handlers()
+        self._remove_debug_only_from_handlers()
 
 
 def add_config_key(key):
