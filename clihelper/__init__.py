@@ -2,7 +2,7 @@
 support.
 
 """
-__version__ = '1.6.1'
+__version__ = '1.6.2'
 
 import daemon
 import grp
@@ -576,7 +576,10 @@ class Logging(object):
         if not debug:
             self._remove_debug_only_handlers()
         self._remove_debug_only_from_handlers()
-        logging.captureWarnings(True)
+        try:
+            logging.captureWarnings(True)
+        except AttributeError:
+            pass
 
     def configure(self):
         """Configure the Python logging runtime with the configuration values
