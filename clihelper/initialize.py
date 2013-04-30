@@ -24,27 +24,11 @@ Daemon:
     pidfile: /var/run/%(project)s.pid
 
 Logging:
-  version: 1
-  formatters:
-    verbose:
-      format: '!(levelname) -10s !(asctime)s !(process)-6d !(processName) -15s !(name) -10s !(funcName) -20s: !(message)s'
-      datefmt: '!Y-!m-!d !H:!M:!S'
-  handlers:
-    console:
-      class: logging.StreamHandler
-      formatter: verbose
-      debug_only: True
   loggers:
-    clihelper:
-      handlers: [console]
-      level: INFO
-      propagate: true
     %(project)s:
       handlers: [console]
       level: DEBUG
       propagate: true
-  disable_existing_loggers: false
-  incremental: false
 """
 
 INITD = """\

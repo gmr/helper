@@ -2,18 +2,16 @@
 support.
 
 """
-__version__ = '1.6.2'
+__version__ = '1.7.0'
 
+import collections
 import daemon
 import grp
 import lockfile
 import logging
-try:
-    from logging.config import dictConfig
-except ImportError:
-    from logutils.dictconfig import dictConfig
 import optparse
 import os
+import platform
 import pwd
 import signal
 import sys
@@ -22,6 +20,17 @@ import traceback
 import warnings
 import yaml
 
+LOGGER = logging.getLogger(__name__)
+
+# Conditionally import the module needed for dictConfig
+(major, minor, rev) = platform.python_version_tuple()
+if float('%s.%s' % (major, minor)) < 2.7:
+    from logutils import dictconfig as logging_config
+else:
+    from logging import config as logging_config
+
+# Used to hold a global instance of the logging object
+LOGGING_OBJ = None
 
 APPNAME = 'clihelper'
 APPLICATION = 'Application'
@@ -40,12 +49,33 @@ EXCEPTION_LOG = '/tmp/clihelper-exceptions.log'
 #: Change to False to not write unhandled exceptions to the EXCEPTION_LOG file
 WRITE_EXCEPTION_LOG = True
 
-LOGGER = logging.getLogger(__name__)
+#: Default Logging Format for Console
+DEFAULT_FORMAT = ('%(levelname) -10s %(asctime)s %(process)-6d %(processName) '
+                  '-15s %(threadName)-10s %(name) -25s %(funcName) -25s'
+                  'L%(lineno)-6d: %(message)s')
+
+#: Default Logging configuration
+LOGGING_DEFAULT = {'disable_existing_loggers': True,
+                   'filters': dict(),
+                   'formatters': {'verbose': {'datefmt': '%Y-%m-%d %H:%M:%S',
+                                              'format': DEFAULT_FORMAT}},
+                   'handlers': {'console': {'class': 'logging.StreamHandler',
+                                            'debug_only': True,
+                                            'formatter': 'verbose'}},
+                   'incremental': False,
+                   'loggers': {'clihelper': {'handlers': ['console'],
+                                             'level': 'INFO',
+                                             'propagate': True}},
+                   'root': {'handlers': [],
+                            'level': logging.CRITICAL,
+                            'propagate': True},
+                   'version': 1}
 
 
 class Controller(object):
     """Extend this class to implement your core application controller. Key
-    methods to implement are Controller.setup, Controller.process and Controller.cleanup.
+    methods to implement are Controller.setup, Controller.process and
+    Controller.cleanup.
 
     If you do not want to use the sleep/wake structure but rather something
     like a blocking IOLoop, overwrite the Controller.run method.
@@ -248,7 +278,7 @@ class Controller(object):
         :rtype: dict
 
         """
-        return self._config.get(LOGGING)
+        return get_logging_config()
 
     def on_sighup(self):
         """Called when SIGHUP is received, shutdown internal runtime state,
@@ -572,10 +602,7 @@ class Logging(object):
         :param bool debug: Toggles use of debug_only loggers
 
         """
-        self.config = configuration
-        if not debug:
-            self._remove_debug_only_handlers()
-        self._remove_debug_only_from_handlers()
+        self.set_configuration(configuration, debug)
         try:
             logging.captureWarnings(True)
         except AttributeError:
@@ -586,13 +613,28 @@ class Logging(object):
         passed in when creating the object.
 
         """
-        dictConfig(self.config)
+        LOGGER.debug('Updating logging config via dictConfig')
+        logging_config.dictConfig(self.config)
+
+    def set_configuration(self, configuration, debug):
+        """Update the internal configuration values, removing debug_only
+        handlers if debug is False.
+
+        :param dict configuration: The logging configuration
+        :param bool debug: Toggles use of debug_only loggers
+
+        """
+        self.config = configuration
+        if not debug:
+            self._remove_debug_only_handlers()
+        self._remove_debug_only_from_handlers()
 
     def _remove_debug_only_from_handlers(self):
         """Iterate through each handler removing the invalid dictConfig key of
         debug_only.
 
         """
+        LOGGER.debug('Removing debug only from handlers')
         for handler in self.config[self.HANDLERS]:
             if self.DEBUG_ONLY in self.config[self.HANDLERS][handler]:
                 del self.config[self.HANDLERS][handler][self.DEBUG_ONLY]
@@ -603,6 +645,7 @@ class Logging(object):
         referencing them.
 
         """
+        LOGGER.debug('Removing debug only handlers')
         remove = list()
         for handler in self.config[self.HANDLERS]:
             if self.config[self.HANDLERS][handler].get('debug_only'):
@@ -628,7 +671,9 @@ def get_logging_config():
     :rtype: dict
 
     """
-    return get_configuration().get(LOGGING)
+    logging_config = _merge_dicts(LOGGING_DEFAULT,
+                                  get_configuration().get(LOGGING, dict()))
+    return logging_config
 
 
 def get_configuration():
@@ -670,9 +715,6 @@ def run(controller, option_callback=None):
         sys.stderr.write('Error: %s\n' % error)
         sys.exit(1)
 
-    # Setup logging for foreground operations
-    setup_logging(options.foreground)
-
     # Run the process with the daemon context
     kwargs = _get_daemon_context_kargs(options.foreground)
     if options.foreground:
@@ -684,8 +726,7 @@ def run(controller, option_callback=None):
     # This will be used by the caller to daemonize the application
     try:
         with daemon.DaemonContext(**kwargs):
-            if not options.foreground:
-                setup_logging(options.foreground)
+            setup_logging(options.foreground)
             process = controller(options, arguments)
             set_controller(process)
             if not options.foreground:
@@ -793,8 +834,12 @@ def setup_logging(debug):
     :param bool debug: The app is in debug mode
 
     """
-    process_logging = Logging(get_logging_config(), debug)
-    process_logging.configure()
+    global LOGGING_OBJ
+    if not LOGGING_OBJ:
+        LOGGING_OBJ = Logging(get_logging_config(), debug)
+    else:
+        LOGGING_OBJ.set_configuration(get_logging_config(), debug)
+    LOGGING_OBJ.configure()
 
 
 # Internal Methods
@@ -862,7 +907,7 @@ def _get_daemon_context_kargs(foreground=False):
         if config.get('group'):
             gid = _get_gid(config['group'])
 
-    kwargs = {'detach_process': True,
+    kwargs = {'detach_process': not foreground,
               'gid': gid,
               'prevent_core': config.get('prevent_core', foreground),
               'signal_map': {signal.SIGHUP: _on_sighup,
@@ -914,6 +959,24 @@ def _load_config():
 
     """
     return _parse_yaml(_read_config_file())
+
+
+def _merge_dicts(d, u):
+    """Merge two nested dictionaries, stolen from
+            http://stackoverflow.com/questions/3232943
+
+    :param dict d: First dict to merge
+    :param dict u: Second dict to merge
+    :rtype: dict
+
+    """
+    for k, v in u.iteritems():
+        if isinstance(v, collections.Mapping):
+            r = _merge_dicts(d.get(k, {}), v)
+            d[k] = r
+        else:
+            d[k] = u[k]
+    return d
 
 
 def _new_option_parser():
