@@ -2,7 +2,7 @@
 support.
 
 """
-__version__ = '1.7.0'
+__version__ = '1.7.1'
 
 import collections
 import daemon
@@ -593,6 +593,7 @@ class Logging(object):
     """
     DEBUG_ONLY = 'debug_only'
     HANDLERS = 'handlers'
+    LOGGERS = 'loggers'
 
     def __init__(self, configuration, debug):
         """Create a new instance of the Logging object passing in the
@@ -652,6 +653,12 @@ class Logging(object):
                 remove.append(handler)
         for handler in remove:
             del self.config[self.HANDLERS][handler]
+
+            for logger in self.config[self.LOGGERS].keys():
+                logger = self.config[self.LOGGERS][logger]
+                if handler in logger[self.HANDLERS]:
+                    logger[self.HANDLERS].remove(handler)
+
         self._remove_debug_only_from_handlers()
 
 
@@ -742,9 +749,9 @@ def run(controller, option_callback=None):
         if WRITE_EXCEPTION_LOG:
             sys.stdout.write('Exception: %r\n\n' % error)
             with open(EXCEPTION_LOG, 'a') as handle:
-                handle.write(repr(error))
                 output = traceback.format_exception(*sys.exc_info())
-                _dev_null = [sys.stdout.write(line) for line in output]
+                _dev_null = [(handle.write(line),
+                             sys.stdout.write(line)) for line in output]
             sys.exit(1)
         if not options.foreground:
             _remove_pidfile()
