@@ -12,7 +12,7 @@ if float('%s.%s' % (major, minor)) < 2.7:
 console_scripts = ['clihelper-init=clihelper.initialize:main']
 
 setup(name='clihelper',
-      version='1.7.1',
+      version='1.7.3',
       description='Internal Command-Line Application Wrapper',
       long_description=('clihelper is a wrapper for command-line daemons '
                         'providing a core Controller class and methods for '

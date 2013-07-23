@@ -2,7 +2,7 @@
 support.
 
 """
-__version__ = '1.7.1'
+__version__ = '1.7.3'
 
 import collections
 import daemon
@@ -729,6 +729,7 @@ def run(controller, option_callback=None):
         kwargs['stderr'] = sys.stderr
         kwargs['stdin'] = sys.stdin
         kwargs['stdout'] = sys.stdout
+        kwargs['working_directory'] = os.getcwd()
 
     # This will be used by the caller to daemonize the application
     try:
