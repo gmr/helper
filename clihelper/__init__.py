@@ -2,7 +2,7 @@
 support.
 
 """
-__version__ = '1.7.3'
+__version__ = '1.7.5'
 
 import collections
 import daemon
@@ -413,7 +413,8 @@ class Controller(object):
         if state not in self._STATES.keys():
             raise ValueError('Invalid Runtime State')
 
-        if self.is_waiting_to_stop and state != self.STATE_STOPPING:
+        if self.is_waiting_to_stop and state not in [self.STATE_STOPPING,
+                                                     self.STATE_STOPPED]:
             LOGGER.warning('Attempt to set invalid state while waiting to '
                            'shutdown: %s ', self._STATES[state])
             return
@@ -753,9 +754,11 @@ def run(controller, option_callback=None):
                 output = traceback.format_exception(*sys.exc_info())
                 _dev_null = [(handle.write(line),
                              sys.stdout.write(line)) for line in output]
-            sys.exit(1)
         if not options.foreground:
             _remove_pidfile()
+        sys.exit(1)
+
+    LOGGER.info('clihelper.run exiting cleanly')
 
 
 def set_appname(appname):
@@ -1060,12 +1063,21 @@ def _read_config_file():
         return handle.read()
 
 
+def _remove_file(path):
+    try:
+        if os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        pass
+
 def _remove_pidfile():
     """Remove the pidfile from the filesystem"""
-    pidfile_path = _get_pidfile_path()
-    if os.path.exists(pidfile_path):
-        os.unlink(pidfile_path)
+    _remove_file(_get_pidfile_path())
+    _remove_pidlock_file()
 
+def _remove_pidlock_file():
+    """Remove the pid lock file from the filesystem"""
+    _remove_file("%s.lock" % _get_pidfile_path())
 
 def _write_pidfile():
     """Write the pidfile out with the process number in the pidfile"""
