@@ -2,7 +2,7 @@
 support.
 
 """
-__version__ = '1.7.5'
+__version__ = '1.7.6'
 
 import collections
 import daemon
@@ -1050,7 +1050,7 @@ def _parse_yaml(content):
     :rtype: dict
 
     """
-    return yaml.load(content)
+    return yaml.safe_load(content)
 
 
 def _read_config_file():
