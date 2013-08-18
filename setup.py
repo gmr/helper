@@ -1,35 +1,55 @@
 import platform
 from setuptools import setup
 
-requirements = ['python-daemon', 'pyyaml']
+requirements = ['pyyaml']
 tests_require = ['mock']
+
+# Don't include python-daemon in Windows
+if platform.system() != 'Windows':
+    requirements.append('python-daemon')
+
+# Add Python 2.6 compatibility libraries
 (major, minor, rev) = platform.python_version_tuple()
 if float('%s.%s' % (major, minor)) < 2.7:
     requirements.append('argparse')
     requirements.append('logutils')
     tests_require.append('unittest2')
 
-console_scripts = ['clihelper-init=clihelper.initialize:main']
-
-setup(name='clihelper',
-      version='1.7.6',
-      description='Internal Command-Line Application Wrapper',
-      long_description=('clihelper is a wrapper for command-line daemons '
-                        'providing a core Controller class and methods for '
-                        'starting the application and setting configuration.'),
-      author='Gavin M. Roy',
-      author_email='gmr@meetme.com',
-      url='https://clihelper.readthedocs.org',
-      packages=['clihelper'],
-      install_requires=requirements,
-      tests_require=tests_require,
+setup(name='helper',
+      version='2.0.0',
       classifiers=[
-          'Development Status :: 4 - Beta',
+          'Development Status :: 5 - Production/Stable',
+          'Environment :: Console',
+          'Environment :: MacOS X',
+          'Environment :: No Input/Output (Daemon)',
+          'Environment :: Win32 (MS Windows)',
           'Intended Audience :: Developers',
+          'License :: OSI Approved :: BSD License'
+          'Natural Language :: English',
+          'Operating System :: MacOS',
+          'Operating System :: Microsoft :: Windows',
+          'Operating System :: POSIX',
+          'Operating System :: POSIX :: BSD',
+          'Operating System :: POSIX :: Linux',
+          'Operating System :: Unix',
+          'Programming Language :: Python :: 2',
           'Programming Language :: Python :: 2.6',
           'Programming Language :: Python :: 2.7',
+          'Programming Language :: Python :: 3',
+          'Programming Language :: Python :: 3.2',
+          'Programming Language :: Python :: 3.3',
+          'Programming Language :: Python :: Implementation :: CPython',
+          'Programming Language :: Python :: Implementation :: PyPy',
           'Topic :: Software Development :: Libraries',
-          'Topic :: Software Development :: Libraries :: Python Modules',
-          'License :: OSI Approved :: BSD License'],
-      entry_points={'console_scripts': console_scripts},
+          'Topic :: Software Development :: Libraries :: Python Modules'],
+      description=('Development library for quickly writing configurable '
+                   'applications and daemons'),
+      long_description=open('README.md').read(),
+      license=open('LICENSE').read(),
+      author='Gavin M. Roy',
+      author_email='gavinmroy@gmail.com',
+      url='https://helper.readthedocs.org',
+      packages=['helper'],
+      install_requires=requirements,
+      tests_require=tests_require,
       zip_safe=True)
