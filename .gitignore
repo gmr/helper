@@ -1,10 +1,9 @@
+.DS_Store
 .idea
 .coverage
-atlassian-ide-plugin.xml
 *.pyc
-example/example.log*
-clihelper.egg-info
+*.egg-info
 dist
-clihelper-init.py
-myapp
 docs/_build
+myapp
+test.py

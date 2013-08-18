@@ -63,19 +63,31 @@ class Config(object):
     def application(self):
         """Return the application section of the configuration.
 
-        :rtype: dict
+        :rtype: object
 
         """
-        return self._values.get('Application', self.APPLICATION)
+        class Config(object):
+            pass
+        config = Config()
+        values = self._values.get('Application', self.APPLICATION)
+        for key in values:
+            setattr(config, key, values[key])
+        return config
 
     @property
     def daemon(self):
         """Return the daemon section of the configuration.
 
-        :rtype: dict
+        :rtype: object
 
         """
-        return self._values.get('Daemon', self.APPLICATION)
+        class Config(object):
+            pass
+        config = Config()
+        values = self._values.get('Daemon', self.DAEMON)
+        for key in values:
+            setattr(config, key, values[key])
+        return config
 
     @property
     def logging(self):
@@ -84,7 +96,7 @@ class Config(object):
         :rtype: dict
 
         """
-        return self._values.get('Logging', self.APPLICATION)
+        return self._values.get('Logging', self.LOGGING)
 
     def reload(self):
         """Reload the configuration from disk returning True if the

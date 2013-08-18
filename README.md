@@ -1,46 +1,32 @@
-# Helper
-
+Helper
+======
 Helper is a development library for quickly writing configurable applications and daemons.
 
+Platforms Supported
+-------------------
+Python 2.6, 2.7, 3.2 and 3.3 on Unix (POSIX) and Windows platforms.
 
-helper uses SIGALARM and signal.pause() to control intervals where the
-dameon should be idle. Do not mix use of SIGALARM unless you intend to redefine
-the run method for use with an IO Loop or some other long running process.
+Dependencies
+------------
+*General*
 
-See the configuration file example later in this document for more information.
+ - pyyaml
+ - python-daemon (UNIX platforms only)
+ - argparse (Python 2.6 only)
+ - logutils (Python 2.6 only)
 
-## Installation
+*Testing*
 
-helper is availble via pypi.python.org. Using pip to install:
+ - mock
+ - unittest2 (Python 2.6 only)
 
-    pip install helper
+Documentation
+-------------
+Documentation is available at http://helper.readthedocs.org
 
-## Documentation
+Installation
+------------
+helper is available as a package from pypi.python.org for development purposes.
+Normally, helper would be installed as a dependency from another application or
+package.
 
-Documenation is available at http://helper.readthedocs.org
-
-### Invoking
-
-To invoke your application, either add a shebang to the top line (#!/usr/bin/env python)
-and the execute bit set on your file in the filesystem or call via the Python cli
-specifically.
-
-#### Invoking an application with a "/usr/bin/env python" shebang
-
-    ./myapp.py --help
-
-#### Invoking explicitly with Python via the cli
-
-    python myapp.py --help
-
-#### Default CLI Options
-
-    Usage: usage: example.py -c <configfile> [options]
-
-    MyApp is just a demo
-
-    Options:
-      -h, --help            show this help message and exit
-      -c CONFIGURATION, --config=CONFIGURATION
-                            Path to the configuration file.
-      -f, --foreground      Run interactively in console

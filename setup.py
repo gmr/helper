@@ -24,7 +24,7 @@ setup(name='helper',
           'Environment :: No Input/Output (Daemon)',
           'Environment :: Win32 (MS Windows)',
           'Intended Audience :: Developers',
-          'License :: OSI Approved :: BSD License'
+          'License :: OSI Approved :: BSD License',
           'Natural Language :: English',
           'Operating System :: MacOS',
           'Operating System :: Microsoft :: Windows',

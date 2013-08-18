@@ -131,6 +131,7 @@ $I:.:+I=................ .......... ........................................=:
 """
 __version__ = '2.0.0'
 
+# Add NullHandler to prevent logging warnings
 import logging
 try:
     # not available in python 2.6
@@ -139,6 +140,47 @@ except ImportError:
     class NullHandler(logging.Handler):
         def emit(self, record):
             pass
-
-# Add NullHandler to prevent logging warnings
 logging.getLogger(__name__).addHandler(NullHandler())
+
+# Import the Controller for extending
+from helper.controller import Controller
+
+# Conditionally import the OS platform support
+import sys
+if sys.platform == 'win32':
+    from helper import windows as platform
+else:
+    from helper import unix as platform
+
+
+# Import config and parser for start
+from helper import config
+from helper import parser
+
+
+def start(ctrl):
+    """Start the Helper controller either in the foreground or as a daemon
+    process.
+
+    :param ctrl helper.Controller: The controller class handle to create and run
+
+    """
+    args = parser.parse()
+    obj = ctrl(args)
+    if args.foreground:
+        try:
+            obj.start()
+        except KeyboardInterrupt:
+            obj.stop()
+    else:
+        try:
+            with platform.Daemon(obj) as daemon:
+                daemon.start()
+        except (OSError, ValueError) as error:
+            sys.stderr.write('\nError starting %s: %s\n\n' %
+                                (sys.argv[0], error))
+            sys.exit(1)
+
+
+if __name__ == '__main__':
+    start(Controller)
