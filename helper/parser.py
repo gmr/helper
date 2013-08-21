@@ -50,7 +50,6 @@ def usage(value):
     _parser.usage = value
 
 
-@property
 def get():
     """Return the handle to the argument parser.
 

@@ -81,10 +81,11 @@ class Controller(object):
 
         """
         self.set_state(self.STATE_INITIALIZING)
-        self._debug = args.foreground
-        self._config = config.Config(args.config)
-        self._logging_config = config.LoggingConfig(self._config.logging,
-                                                    self._debug)
+        self.args = args
+        self.debug = args.foreground
+        self.config = config.Config(args.config)
+        self.logging_config = config.LoggingConfig(self.config.logging,
+                                                   self.debug)
 
     def cleanup(self):
         """Override this method to cleanly shutdown the application."""
@@ -94,16 +95,6 @@ class Controller(object):
                           'extend Controller.cleanup',
                           DeprecationWarning, stacklevel=2)
             self._cleanup()
-
-    @property
-    def config(self):
-        """Property method that returns the full configuration as a dict with
-        the top-level Application, Daemon, and Logging sections.
-
-        :rtype: helper.config.Config
-
-        """
-        return self._config
 
     @property
     def current_state(self):
@@ -198,15 +189,6 @@ class Controller(object):
         """
         return self._state == self.STATE_STOP_REQUESTED
 
-    @property
-    def logging_config(self):
-        """Return the logging section of the configuration file as a dict.
-
-        :rtype: dict
-
-        """
-        return self.config.logging
-
     def on_sighup(self):
         """Called when SIGHUP is received, shutdown internal runtime state,
         reloads configuration and then calls Controller.run(). Can be extended
@@ -259,9 +241,9 @@ class Controller(object):
         :rtype: bool
 
         """
-        if self._config.reload():
+        if self.config.reload():
             LOGGER.info('Configuration reloaded')
-            if self._logging_config.update(self._config.logging, self._debug):
+            if self.logging_config.update(self.config.logging, self.debug):
                 LOGGER.info('Logging configuration updated')
             return True
         LOGGER.info('No configuration updates')
@@ -380,7 +362,7 @@ class Controller(object):
         :rtype: int
 
         """
-        return self._config.application.wake_interval
+        return self.config.application.get('wake_interval', self.WAKE_INTERVAL)
 
     def _sleep(self):
         """Setup the next alarm to fire and then wait for it to fire."""

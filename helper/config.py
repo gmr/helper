@@ -53,50 +53,32 @@ class Config(object):
         :param str file_path:
 
         """
+        self.application = Data()
+        self.daemon = Data()
+        self.logging = Data()
         self._file_path = None
-        self._values = dict()
+        self._values = Data()
         if file_path:
             self._file_path = self._validate(file_path)
-            self._values = self._load_config_file()
+            self._values = Data(self._load_config_file())
+        self._assign_defaults()
+        LOGGER.debug(self.logging)
 
-    @property
-    def application(self):
-        """Return the application section of the configuration.
+    def _assign_defaults(self):
+        if 'Application' in self._values:
+            self.application = self._values['Application']
+        else:
+            self.application = self.APPLICATION
 
-        :rtype: object
+        if 'Daemon' in self._values:
+            self.daemon = self._values['Daemon']
+        else:
+            self.daemon = self.DAEMON
 
-        """
-        class Config(object):
-            pass
-        config = Config()
-        values = self._values.get('Application', self.APPLICATION)
-        for key in values:
-            setattr(config, key, values[key])
-        return config
-
-    @property
-    def daemon(self):
-        """Return the daemon section of the configuration.
-
-        :rtype: object
-
-        """
-        class Config(object):
-            pass
-        config = Config()
-        values = self._values.get('Daemon', self.DAEMON)
-        for key in values:
-            setattr(config, key, values[key])
-        return config
-
-    @property
-    def logging(self):
-        """Return the logging section of the configuration.
-
-        :rtype: dict
-
-        """
-        return self._values.get('Logging', self.LOGGING)
+        if 'Logging' in self._values:
+            self.logging = dict(self._values['Logging'])
+        else:
+            self.logging = self.LOGGING
 
     def reload(self):
         """Reload the configuration from disk returning True if the
@@ -107,7 +89,7 @@ class Config(object):
 
             # Try and reload the configuration file from disk
             try:
-                values = self._load_config_file()
+                values = Data(self._load_config_file())
             except ValueError as error:
                 LOGGER.error('Could not reload configuration: %s', error)
                 return False
@@ -115,6 +97,7 @@ class Config(object):
             # Only update the configuration if the values differ
             if cmp(values, self._values) == 0:
                 self._values = values
+                self._assign_defaults()
                 return True
 
         return False
@@ -223,3 +206,91 @@ class LoggingConfig(object):
                 if handler in logger[self.HANDLERS]:
                     logger[self.HANDLERS].remove(handler)
         self._remove_debug_only_from_handlers()
+
+
+class Data(object):
+    """Data object configuration is wrapped in, can be used as a object with
+    attributes or as a dict.
+
+    """
+    def __init__(self, value=None):
+        super(Data, self).__init__()
+        if value:
+            for name in value:
+                setattr(self, name, value)
+
+    def __contains__(self, name):
+        return name in self.__dict__.keys()
+
+    def __delattr__(self, name):
+        object.__delattr__(self, name)
+
+    def __delitem__(self, name):
+        if not name in self.__dict__:
+            raise nameError(name)
+        object.__delattr__(self, name)
+
+    def __getattribute__(self, name):
+        return object.__getattribute__(self, name)
+
+    def __getitem__(self, name):
+        return object.__getattribute__(self, name)
+
+    def __setitem__(self, name, value):
+        if isinstance(value, dict) and name != '__dict__':
+            value = Data(value)
+        object.__setattr__(self, name, value)
+
+    def __setattr__(self, name, value):
+        if isinstance(value, dict) and name != '__dict__':
+            value = Data(value)
+        object.__setattr__(self, name, value)
+
+    def __repr__(self):
+        return repr(self.__dict__)
+
+    def __len__(self):
+        return len(self.__dict__.keys())
+
+    def __iter__(self):
+        for name in self.__dict__.keys():
+            yield name
+
+    def str(self):
+        return str(self.__dict__)
+
+    def dict(self):
+        return dict(self.__dict__)
+
+    def copy(self):
+        return copy(self.__dict__)
+
+    def get(self, name):
+        return self.__dict__.get(name)
+
+    def has_name(self, name):
+        return name in self.__dict__
+
+    def items(self):
+        return self.__dict__.items()
+
+    def iteritems(self):
+        return self.__dict__.iteritems()
+
+    def itervalues(self):
+        return self.__dict__.itervalues()
+
+    def keys(self):
+        return self.__dict__.keys()
+
+    def pop(self, name, d=None):
+        return self.__dict__.pop(name, d)
+
+    def setdefault(self, name, default):
+        self.__dict__.setdefault(name, default)
+
+    def update(self, other=None, **kwargs):
+        self.__dict__.update(other, **kwargs)
+
+    def values(self):
+        return self.__dict__.values()
