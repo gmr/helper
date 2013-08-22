@@ -27,9 +27,6 @@ class Daemon(object):
         :param helper.Controller controller: The controller to daaemonize & run
 
         """
-        self.stdin = sys.stdin
-        self.stdout = sys.stdout
-        self.stderr = sys.stderr
         self.controller = controller
         self.pidfile_path = self._get_pidfile_path()
 
