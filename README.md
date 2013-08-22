@@ -11,7 +11,6 @@ Dependencies
 *General*
 
  - pyyaml
- - python-daemon (UNIX platforms only)
  - argparse (Python 2.6 only)
  - logutils (Python 2.6 only)
 
@@ -29,4 +28,3 @@ Installation
 helper is available as a package from pypi.python.org for development purposes.
 Normally, helper would be installed as a dependency from another application or
 package.
-
