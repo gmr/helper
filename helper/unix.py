@@ -2,14 +2,15 @@
 Unix daemonization support
 
 """
-import daemon
+import atexit
 import datetime
 import grp
-import lockfile
 import logging
 import os
 from os import path
 import pwd
+import re
+import subprocess
 import sys
 import traceback
 
@@ -26,9 +27,11 @@ class Daemon(object):
         :param helper.Controller controller: The controller to daaemonize & run
 
         """
+        self.stdin = sys.stdin
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
         self.controller = controller
-        self._pidfile_path = self._get_pidfile_path()
-        self._kwargs = self._get_kwargs()
+        self.pidfile_path = self._get_pidfile_path()
 
     def __enter__(self):
         """Context manager method to return the handle to this object.
@@ -43,22 +46,25 @@ class Daemon(object):
          an exception or what.
 
         """
-        if exc_type:
-            LOGGER.error('Daemon context manager closed on exception')
+        if exc_type and not isinstance(exc_val, SystemExit):
+            LOGGER.error('Daemon context manager closed on exception: %r',
+                         exc_type)
 
     def start(self):
-        """Daemonize"""
+        """Daemonize if the process is not already running."""
+        if self._is_already_running():
+            sys.exit(1)
+
         exception_log = self._get_exception_log_path()
         try:
-            with daemon.DaemonContext(**self._kwargs):
-                self._write_pidfile()
-                self.controller.start()
+            self._daemonize()
+            self.controller.start()
         except Exception as error:
             with open(exception_log, 'a') as handle:
                 timestamp = datetime.datetime.now().isoformat()
-                handle.write('\n%s [START]\n' % ['-' for pos in range(0, 80)])
-                handle.write('%s Exception [%s]\n' % (sys.arg[0], timestamp))
-                handle.write('%s\n' % ['-' for pos in range(0, 80)])
+                handle.write('{:->80}\n'.format(' [START]'))
+                handle.write('%s Exception [%s]\n' % (sys.argv[0], timestamp))
+                handle.write('{:->80}\n'.format(' [INFO]'))
                 handle.write('Interpreter: %s\n' % sys.executable)
                 handle.write('CLI arguments: %s\n' % ' '.join(sys.argv))
                 handle.write('Exception: %s\n' % error)
@@ -66,10 +72,84 @@ class Daemon(object):
                 output = traceback.format_exception(*sys.exc_info())
                 _dev_null = [(handle.write(line),
                              sys.stdout.write(line)) for line in output]
-                handle.write('\n%s [END]\n' % ['-' for pos in range(0, 80)])
-                self._remove_pidfile()
-                sys.exit(1)
-        self._remove_pidfile()
+                handle.write('{:->80}\n'.format(' [END]'))
+                handle.flush()
+            sys.exit(1)
+
+    def _is_already_running(self):
+        """Check to see if the process is running, first looking for a pidfile,
+        then shelling out in either case, removing a pidfile if it exists but
+        the process is not running.
+
+        """
+        # Look for the pidfile, if exists determine if the process is alive
+        if os.path.exists(self.pidfile_path):
+            pid = open(self.pidfile_path).read().strip()
+            try:
+                os.kill(int(pid), 0)
+                sys.stderr.write('Process already running as pid # %s\n' % pid)
+                return True
+            except OSError as error:
+                LOGGER.debug('Found pidfile, no process # %s', error)
+                os.unlink(self.pidfile_path)
+
+        # Check the os for a process that is not this one that looks the same
+        pattern = ' '.join(sys.argv)
+        pattern = '[%s]%s' % (pattern[0], pattern[1:])
+        try:
+            output = subprocess.check_output('ps a | grep "%s"' % pattern,
+                                             shell=True)
+        except subprocess.CalledProcessError:
+            return False
+        pids = [int(pid) for pid in (re.findall(r'^([0-9]+)\s',
+                                                output.decode('latin-1')))]
+        pids.remove(os.getpid())
+        if not pids:
+            return False
+        if len(pids) == 1:
+            pids = pids[0]
+        sys.stderr.write('Process already running as pid # %s\n' % pids)
+        return True
+
+    def _daemonize(self):
+        """Fork into a background process and setup the process, copied in part
+        from http://www.jejik.com/files/examples/daemon3x.py
+
+        """
+        LOGGER.info('Forking %s into the background', sys.argv[0])
+        try:
+            pid = os.fork()
+            if pid > 0:
+                    sys.exit(0)
+        except OSError as error:
+                raise OSError('Could not fork off parent: %s', error)
+
+        # Decouple from parent environment
+        os.chdir('/')
+        os.setsid()
+        os.umask(0)
+
+        # Fork again
+        try:
+            pid = os.fork()
+            if pid > 0:
+                sys.exit(0)
+        except OSError as error:
+            raise OSError('Could not fork child: %s', error)
+
+        # redirect standard file descriptors
+        sys.stdout.flush()
+        sys.stderr.flush()
+        si = open(os.devnull, 'r')
+        so = open(os.devnull, 'a+')
+        se = open(os.devnull, 'a+')
+        os.dup2(si.fileno(), sys.stdin.fileno())
+        os.dup2(so.fileno(), sys.stdout.fileno())
+        os.dup2(se.fileno(), sys.stderr.fileno())
+
+        # Automatically call self._remove_pidfile when the app exits
+        atexit.register(self._remove_pidfile)
+        self._write_pidfile()
 
     def _get_exception_log_path(self, exception_log=None):
         """Return the normalized path for the connection log, raising an
@@ -90,28 +170,20 @@ class Daemon(object):
         for exception_log in ['/var/log/%s.errors' % sys.argv[0],
                               '/var/tmp/%s.errors' % sys.argv[0],
                               '/tmp/%s.errors' % sys.argv[0]]:
-            if os.access(exception_log, os.W_OK):
+            if os.access(path.dirname(exception_log), os.W_OK):
                 return exception_log
 
         raise OSError('Could not find an appropriate place for a exception log')
 
-    def _get_gid(self, group):
+    def _get_gid(self):
         """Return the group id for the specified group.
 
-        :param str group: The group name to get the id for
         :rtype: int
 
         """
-        return grp.getgrnam(group).gr_gid
-
-    def _get_uid(self, username):
-        """Return the user id for the specified username
-
-        :param str username: The user to get the UID for
-        :rtype: int
-
-        """
-        return pwd.getpwnam(username).pw_uid
+        if not self.controller.config.daemon.group:
+            return None
+        return grp.getgrnam(self.controller.config.daemon.group).gr_gid
 
     def _get_pidfile_path(self, pidfile=None):
         """Return the normalized path for the pidfile, raising an
@@ -125,57 +197,44 @@ class Daemon(object):
         """
         if pidfile:
             pidfile = path.abspath(pidfile)
-            if not os.access(pidfile, os.W_OK):
+            if not os.access(path.dirname(pidfile), os.W_OK):
                 raise ValueError('Cannot write to specified pid file path'
                                  ' %s' % pidfile)
             return pidfile
 
-        for pidfile in ['%s/pids/%s.pid' % (os.getcwd(), sys.argv[0]),
-                         '/var/run/%s.pid' % sys.argv[0],
-                         '/var/run/%s/%s.pid' % (sys.argv[0], sys.argv[0]),
-                         '/var/tmp/%s.pid' % sys.argv[0],
-                         '/tmp/%s.pid' % sys.argv[0]]:
-            if os.access(path.abspath(pidfile), os.W_OK):
-                return path.abspath(pidfile)
+        app = sys.argv[0].split('/')[-1]
+
+        for pidfile in ['%s/pids/%s.pid' % (os.getcwd(), app),
+                         '/var/run/%s.pid' % app,
+                         '/var/run/%s/%s.pid' % (app, app),
+                         '/var/tmp/%s.pid' % app,
+                         '/tmp/%s.pid' % app,
+                         '%s.pid' % app]:
+            if os.access(path.dirname(pidfile), os.W_OK):
+                return pidfile
 
         raise OSError('Could not find an appropriate place for a pid file')
 
-    def _get_kwargs(self):
-        """Return the dictionary of keyword arguments for the daemon context.
+    def _get_uid(self):
+        """Return the user id for the specified username
 
-        :return: dict
-        :raises: ValueError
+        :rtype: int
 
         """
-        try:
-            pidlock_file = lockfile.FileLock(self._pidfile_path)
-        except lockfile.LockFailed as error:
-            raise ValueError('Can not write PID lock file to %s: %s' %
-                             (self._pidfile_path, error))
-
-        return {'gid': self._get_gid(self.controller.config.daemon.group),
-                'pidfile': pidlock_file,
-                'prevent_core': self.controller.config.daemon.prevent_core,
-                'uid': self._get_uid(self.controller.config.daemon.user)}
-
-    def _remove_file(self, path):
-        """Try and remove all remnants of the pid file if it exists."""
-        try:
-            if os.path.exists(path):
-                os.unlink(path)
-        except OSError:
-            pass
+        if not self.controller.config.daemon.user:
+            return None
+        return pwd.getpwnam(self.controller.config.daemon.user).pw_uid
 
     def _remove_pidfile(self):
         """Remove the pid file from the filesystem"""
-        self._remove_file(self._pidfile_path)
-        self._remove_pidlock_file()
-
-    def _remove_pidlock_file(self):
-        """Remove the pid lock file from the filesystem"""
-        self._remove_file("%s.lock" % self._pidfile_path)
+        with open('/tmp/dbug.log', 'a') as handle:
+            handle.write('Removing %s\n' % self.pidfile_path)
+        try:
+            os.unlink(self.pidfile_path)
+        except OSError:
+            pass
 
     def _write_pidfile(self):
         """Write the pid file out with the process number in the pid file"""
-        with open(self._pidfile_path, "w") as handle:
+        with open(self.pidfile_path, "w") as handle:
             handle.write(str(os.getpid()))

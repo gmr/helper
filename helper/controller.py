@@ -189,7 +189,7 @@ class Controller(object):
         """
         return self._state == self.STATE_STOP_REQUESTED
 
-    def on_sighup(self):
+    def on_sighup(self, signum_unused, frame_unused):
         """Called when SIGHUP is received, shutdown internal runtime state,
         reloads configuration and then calls Controller.run(). Can be extended
         to implement other behaviors.
@@ -200,7 +200,7 @@ class Controller(object):
         if self.is_sleeping:
             signal.pause()
 
-    def on_sigterm(self):
+    def on_sigterm(self, signum_unused, frame_unused):
         """Called when SIGTERM is received, calling self.stop(). Override to
         implement a different behavior.
 
@@ -208,14 +208,14 @@ class Controller(object):
         LOGGER.info('Received SIGTERM, initiating shutdown')
         self.stop()
 
-    def on_sigusr1(self):
+    def on_sigusr1(self, signum_unused, frame_unused):
         """Called when SIGUSR1 is received, does not have any attached
         behavior. Override to implement a behavior for this signal.
 
         """
         LOGGER.info('Received SIGUSR1')
 
-    def on_sigusr2(self):
+    def on_sigusr2(self, signum_unused, frame_unused):
         """Called when SIGUSR2 is received, does not have any attached
         behavior. Override to implement a behavior for this signal.
 
@@ -249,7 +249,7 @@ class Controller(object):
         LOGGER.info('No configuration updates')
         return False
 
-    def start(self):
+    def run(self):
         """The core method for starting the application. Will setup logging,
         toggle the runtime state flag, block on loop, then call shutdown.
 
@@ -264,6 +264,15 @@ class Controller(object):
         self._sleep()
         while self.is_running or self.is_sleeping:
             signal.pause()
+
+    def start(self):
+        """Important:
+
+            Do not extend this method, rather redefine Controller.run
+
+        """
+        self.setup_signals()
+        self.run()
 
     def set_state(self, state):
         """Set the runtime state of the Controller. Use the internal constants
@@ -332,6 +341,12 @@ class Controller(object):
         """Override to provide any required setup steps."""
         pass
 
+    def setup_signals(self):
+        signal.signal(signal.SIGHUP, self.on_sighup)
+        signal.signal(signal.SIGTERM, self.on_sigterm)
+        signal.signal(signal.SIGUSR1, self.on_sigusr1)
+        signal.signal(signal.SIGUSR2, self.on_sigusr2)
+
     def stop(self):
         """Override to implement shutdown steps."""
         LOGGER.info('Attempting to stop the process')
@@ -362,7 +377,7 @@ class Controller(object):
         :rtype: int
 
         """
-        return self.config.application.get('wake_interval', self.WAKE_INTERVAL)
+        return self.config.application.wake_interval or self.WAKE_INTERVAL
 
     def _sleep(self):
         """Setup the next alarm to fire and then wait for it to fire."""

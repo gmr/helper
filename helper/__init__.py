@@ -152,7 +152,6 @@ if sys.platform == 'win32':
 else:
     from helper import unix as platform
 
-
 # Import config and parser for start
 from helper import config
 from helper import parser
@@ -178,9 +177,8 @@ def start(ctrl):
                 daemon.start()
         except (OSError, ValueError) as error:
             sys.stderr.write('\nError starting %s: %s\n\n' %
-                                (sys.argv[0], error))
+                             (sys.argv[0], error))
             sys.exit(1)
-
 
 if __name__ == '__main__':
     start(Controller)

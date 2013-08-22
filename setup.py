@@ -4,10 +4,6 @@ from setuptools import setup
 requirements = ['pyyaml']
 tests_require = ['mock']
 
-# Don't include python-daemon in Windows
-if platform.system() != 'Windows':
-    requirements.append('python-daemon')
-
 # Add Python 2.6 compatibility libraries
 (major, minor, rev) = platform.python_version_tuple()
 if float('%s.%s' % (major, minor)) < 2.7:
