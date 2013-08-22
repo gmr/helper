@@ -18,7 +18,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Daemon(object):
+    """Daemonize the helper application, putting it in a forked background
+    process.
 
+    """
     def __init__(self, controller):
         """Daemonize the controller, optionally passing in the user and group
         to run as, a pid file, if core dumps should be prevented and a path to
