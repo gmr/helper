@@ -1,7 +1,7 @@
-g===================
-clihelper |version|
 ===================
-The clihelper package is a command-line/daemon application wrapper package with the aim of creating a consistent method of creating daemonizing applications. It is available on the Python Package Index as `clihelper <https://pypi.python.org/pypi/clihelper>`_.
+helper |version|
+===================
+helper is a command-line/daemon application wrapper package with the aim of creating a consistent and fast way to creating applications. It is available on the Python Package Index as `helper <https://pypi.python.org/pypi/helper>`_. helper supports both UNIX (Posix) and Windows applications and works with Python 2.6, 2.7, 3.2 or 3.3.
 
 Documentation
 =============
@@ -19,7 +19,7 @@ Documentation
 Version:
     |release|
 Github Page:
-    `https://github.com/gmr/clihelper <https://github.com/gmr/clihelper>`_
+    `https://github.com/gmr/helper <https://github.com/gmr/helper>`_
 Author:
     Gavin M. Roy <gavinmroy@gmail.com>
 License:

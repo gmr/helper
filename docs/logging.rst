@@ -1,8 +1,8 @@
 Logging
 =======
-The :class:`Logging <clihelper.Logging>` class is included as a convenient wrapper to handle Python 2.6 and Python 2.7 dictConfig differences as well as to manage the :mod:`clihelper` specific ``debug_only`` Handler setting.
+The :class:`Logging <helper.config.LoggingConfig>` class is included as a convenient wrapper to handle Python 2.6 and Python 2.7 dictConfig differences as well as to manage the :mod:`helper` specific ``debug_only`` Handler setting.
 
-If you want to use the default console only logging for clihelper, you do not need to implement this configuration section. Any configuration you specify merges with the default configuration.
+If you want to use the default console only logging for helper, you do not need to implement this configuration section. Any configuration you specify merges with the default configuration.
 
 Default Configuration
 ---------------------
@@ -21,7 +21,7 @@ Default Configuration
         formatter: verbose
     incremental: false
     loggers:
-      clihelper:
+      helper:
         handlers: [console]
         level: INFO
         propagate: true
@@ -31,5 +31,5 @@ Default Configuration
       propagate: true
     version: 1
 
-.. autoclass:: clihelper.Logging
+.. autoclass:: helper.config.LoggingConfig
     :members:

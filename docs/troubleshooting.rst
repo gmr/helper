@@ -6,4 +6,12 @@ If you find that you start your application and it immediately dies without any 
 
 Unhandled Exceptions
 --------------------
-By default clihelper will write any unhandled exceptions to a file in `/tmp/clihelper-exceptions.log`. You can change the path by altering :const:`clihelper.EXCEPTION_LOG <clihelper.EXCEPTION_LOG>` or turn this behavior off with :const:`clihelper.WRITE_EXCEPTION_LOG <clihelper.WRITE_EXCEPTION_LOG>` ``= False``.
+By default helper will write any unhandled exceptions to a file in one of the following paths:
+
+UNIX:
+- /var/log/<APPNAME>.errors
+- /var/tmp/<APPNAME>.errors
+- /tmp/<APPNAME>.errors
+
+Windows:
+- Not implemented yet.

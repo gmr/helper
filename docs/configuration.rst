@@ -1,8 +1,8 @@
 Configuration Format
 ====================
-clihelper uses `logging.config.dictConfig <http://docs.python.org/library/logging.config.html>`_ module to create a flexible method for configuring the python standard logging module. If Python 2.6 is used, `logutils.dictconfig.dictConfig <https://pypi.python.org/pypi/logutils>`_ is used instead.
+helper uses `logging.config.dictConfig <http://docs.python.org/library/logging.config.html>`_ module to create a flexible method for configuring the python standard logging module. If Python 2.6 is used, `logutils.dictconfig.dictConfig <https://pypi.python.org/pypi/logutils>`_ is used instead.
 
-`YAML <http://yaml.org>`_ is used for the configuration file for clihelper based applications and will automatically be loaded and referenced for all the required information to start your application. The configuration may be reloaded at runtime by sending a USR1 signal to parent process.
+`YAML <http://yaml.org>`_ is used for the configuration file for helper based applications and will automatically be loaded and referenced for all the required information to start your application. The configuration may be reloaded at runtime by sending a USR1 signal to parent process.
 
 The configuration file has three case-sensitive sections that are required: :ref:`application`, :ref:`daemon`, and :ref:`logging`.
 
@@ -10,7 +10,7 @@ The configuration file has three case-sensitive sections that are required: :ref
 
 Application
 -----------
-As a generalization, this is where your application's configuration directives go. There is only one core configuration attribute for this section, `wake_interval`. The `wake_interval` value is an integer value that is used for the sleep/wake/process flow and tells clihelper how often to fire the :meth:`Controller.process <clihelper.Controller.process>` method.
+As a generalization, this is where your application's configuration directives go. There is only one core configuration attribute for this section, `wake_interval`. The `wake_interval` value is an integer value that is used for the sleep/wake/process flow and tells helper how often to fire the :meth:`Controller.process <helper.Controller.process>` method.
 
 .. _daemon:
 
@@ -24,8 +24,6 @@ group [optional]
     The group name to switch to when the process is daemonized
 pidfile
     The pidfile to write when the process is daemonized
-prevent_core
-    This bool value tells clihelper if it can write core files or not when there is a major issue
 
 .. _logging:
 
@@ -44,7 +42,7 @@ As previously mentioned, the Logging section uses the Python standard library `d
         formatter: verbose
         debug_only: True
     loggers:
-      clihelper:
+      helper:
         handlers: [console]
         level: INFO
         propagate: true
@@ -62,7 +60,7 @@ As previously mentioned, the Logging section uses the Python standard library `d
 
 Logging Caveats
 ^^^^^^^^^^^^^^^
-In order to allow for customizable console output when running in the foreground and no console output when daemonized, a "debug_only" node has been added to the standard dictConfig format in the handler section. This method is evaluated in the clihelper.Logging and removed, if present, prior to passing the dictionary to dictConfig if present.
+In order to allow for customizable console output when running in the foreground and no console output when daemonized, a "debug_only" node has been added to the standard dictConfig format in the handler section. This method is evaluated in the helper.Logging and removed, if present, prior to passing the dictionary to dictConfig if present.
 
 If the value is set to true and the application is not running in the foreground, the configuration for the handler and references to it will be removed from the configuration dictionary.
 

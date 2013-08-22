@@ -1,35 +1,32 @@
 Getting Started
 ===============
-Creating your first :mod:`clihelper` application is a fairly straightforward process:
+Creating your first :mod:`helper` application is a fairly straightforward process:
 
-#. Download and install clihelper via pip::
+#. Download and install helper via pip::
 
-    pip install clihelper
+    pip install helper
 
-#. Create a new application with the `clihelper-init` script which will create a stub project including the package directory, configuration file, init.d script for RHEL systems, and setup.py file::
+#. Create a new application with the `new-helper` script which will create a stub project including the package directory, configuration file, init.d script for RHEL systems, and setup.py file::
 
-    clihelper-init -p myapp
+    new-helper -p myapp
 
 #. Open the controller.py file in myapp/myapp/ and you should have a file that looks similar to the following::
 
     """myapp
 
-    clihelper boilerplate project
+    Helper boilerplate project
 
     """
-    import clihelper
+    import helper
     import logging
+    from helper import parser
 
-    from myapp import __version__
-
+    DESCRIPTION = 'Project Description'
     LOGGER = logging.getLogger(__name__)
 
-    DESCRIPTION = 'Project Description for cli help'
-
-
-    class Controller(clihelper.Controller):
+    class Controller(helper.Controller):
         """The core application controller which is created by invoking
-        clihelper.run().
+        helper.run().
 
        """
 
@@ -51,10 +48,12 @@ Creating your first :mod:`clihelper` application is a fairly straightforward pro
 
 
     def main():
-        clihelper.setup('myapp', DESCRIPTION, __version__)
-        clihelper.run(Controller)
+        parser.description(DESCRIPTION)
+        helper.start(Controller)
 
-#. Extend the :meth:`Controller.proccess <clihelper.Controller.proccess>` method to put your core logic in place.
+
+
+#. Extend the :meth:`Controller.proccess <helper.Controller.proccess>` method to put your core logic in place.
 
 #. If you want to test your app without installing it, I often make a small script in the project directory, something like myapp/myapp.py that looks like the following::
 
@@ -68,4 +67,4 @@ Creating your first :mod:`clihelper` application is a fairly straightforward pro
     ./myapp.py -c etc/myapp.yml -f
 
 
-That's about all there is to it. If you don't want to use the sleep/wake/process pattern but want to use an IOLoop, instead of extending :meth:`Controller.process <clihelper.Controller.process>`, extend :meth:`Controller.run <clihelper.Controller.run>`.
+That's about all there is to it. If you don't want to use the sleep/wake/process pattern but want to use an IOLoop, instead of extending :meth:`Controller.process <helper.Controller.process>`, extend :meth:`Controller.run <helper.Controller.run>`.

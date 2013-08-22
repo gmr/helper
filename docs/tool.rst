@@ -1,6 +1,6 @@
 Application Initialization Tool
 ===============================
-clihelper comes with a command line tool `clihelper-init` which will create a stub clihelper application project with the following items:
+helper comes with a command line tool `new-helper` which will create a stub helper application project with the following items:
 
 - Python package for the application
 - Stub application controller
@@ -10,7 +10,7 @@ clihelper comes with a command line tool `clihelper-init` which will create a st
 
 Usage::
 
-    usage: clihelper-init [-h] [--version] PROJECT
+    usage: new-helper [-h] [--version] PROJECT
 
 When you run the application, a tree resembling the following is created::
 
@@ -23,4 +23,4 @@ When you run the application, a tree resembling the following is created::
             controller.py
         setup.py
 
-Where PROJECT is the value you specify when running ``clihelper-init``.
+Where PROJECT is the value you specify when running ``new-helper``.

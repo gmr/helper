@@ -1,19 +1,31 @@
 Adding Commandline Arguments
 ============================
-If you would like to add additional command-line options, create a method that will receive one argument, parser. The parser is the OptionParser instance and you can add OptionParser options like you normally would. The command line options and arguments are accessible as attributes in the Controller: Controller._options and Controller._arguments::
+If you would like to add additional command-line options, access helper's `argparse based parser <http://docs.python.org/3/library/argparse.html>`_ adding additional command line arguments as needed. The arguments will be accessible via the `Controller.args` attribute.
 
-    def setup_options(parser):
-        """Called by the clihelper._cli_options method if passed to the
-        Controller.run method.
+Example::
 
-        """
-        parser.add_option("-d", "--delete",
-                          action="store_true",
-                          dest="delete",
-                          default=False,
-                          help="Delete all production data")
+    from helper import parser
 
-    def main():
-        """Invoked by a script created by setup tools."""
-        clihelper.setup('myapp', 'myapp does stuff', '1.0.0')
-        clihelper.run(MyController, setup_options)
+    p = parser.get()
+    p.add_argument('-n', '--newrelic',
+                   action='store',
+                   dest='newrelic',
+                   help='Path to newrelic.init for enabling NewRelic '
+                        'instrumentation')
+    p.add_argument('-p', '--path',
+                   action='store_true',
+                   dest='path',
+                   help='Path to prepend to the Python system path')
+
+
+You can also override the auto-assigned application name::
+
+    from helper import parser
+
+    parser.name('my-app')
+
+And the default description::
+
+    from helper import parser
+
+    parser.description('My application rocks!')
