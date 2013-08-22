@@ -121,6 +121,16 @@ class Daemon(object):
         except OSError as error:
                 raise OSError('Could not fork off parent: %s', error)
 
+        # Set the user id
+        uid = self._get_uid()
+        if uid is not None:
+            os.setuid(uid)
+
+        # Set the group id
+        gid = self._get_gid()
+        if gid is not None:
+            os.setgid(gid)
+
         # Decouple from parent environment
         os.chdir('/')
         os.setsid()
