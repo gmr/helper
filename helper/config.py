@@ -60,20 +60,20 @@ class Config(object):
         self._values = Data()
         if file_path:
             self._file_path = self._validate(file_path)
-            self._values = Data(self._load_config_file())
+            self._values = self._load_config_file()
         self._assign_defaults()
         LOGGER.debug(self.logging)
 
     def _assign_defaults(self):
         if 'Application' in self._values:
-            self.application = self._values['Application']
+            self.application = Data(self._values['Application'])
         else:
-            self.application = self.APPLICATION
+            self.application = Data(self.APPLICATION)
 
         if 'Daemon' in self._values:
-            self.daemon = self._values['Daemon']
+            self.daemon = Data(self._values['Daemon'])
         else:
-            self.daemon = self.DAEMON
+            self.daemon = Data(self.DAEMON)
 
         if 'Logging' in self._values:
             self.logging = dict(self._values['Logging'])
@@ -215,9 +215,12 @@ class Data(object):
     """
     def __init__(self, value=None):
         super(Data, self).__init__()
-        if value:
-            for name in value:
-                setattr(self, name, value)
+        if value and isinstance(value, dict):
+            for name in value.keys():
+                if isinstance(value[name], dict):
+                    object.__setattr__(self, name, Data(value[name]))
+                else:
+                    object.__setattr__(self, name, value[name])
 
     def __contains__(self, name):
         return name in self.__dict__.keys()
@@ -227,7 +230,7 @@ class Data(object):
 
     def __delitem__(self, name):
         if not name in self.__dict__:
-            raise nameError(name)
+            raise KeyError(name)
         object.__delattr__(self, name)
 
     def __getattribute__(self, name):
