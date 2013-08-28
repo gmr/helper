@@ -6,7 +6,6 @@ import logging
 import signal
 import sys
 import time
-import warnings
 
 from helper import config
 from helper import __version__
@@ -90,11 +89,11 @@ class Controller(object):
     def cleanup(self):
         """Override this method to cleanly shutdown the application."""
         LOGGER.debug('Unextended %s.cleanup() method', self.__class__.__name__)
-        if hasattr(self, '_cleanup'):
-            warnings.warn('Controller._cleanup is deprecated, '
-                          'extend Controller.cleanup',
-                          DeprecationWarning, stacklevel=2)
-            self._cleanup()
+
+    def configuration_reloaded(self):
+        """Override to provide any steps when the configuration is reloaded."""
+        LOGGER.debug('Unextended %s.configuration_reloaded() method',
+                     self.__class__.__name__)
 
     @property
     def current_state(self):
@@ -196,7 +195,12 @@ class Controller(object):
 
         """
         LOGGER.info('Received SIGHUP')
-        self.reload_configuration()
+        if self.config.reload():
+            LOGGER.info('Configuration reloaded')
+            if self.logging_config.update(self.config.logging, self.debug):
+                LOGGER.info('Logging configuration updated')
+            self.configuration_reloaded()
+
         if self.is_sleeping:
             signal.pause()
 
@@ -227,27 +231,7 @@ class Controller(object):
         sleep interval in the main application loop.
 
         """
-        #raise NotImplementedError
-        LOGGER.info('Process invoked')
-
-    def reload_configuration(self):
-        """Reload the configuration by creating a new instance of the
-        Configuration object and re-setup logging. Extend behavior by
-        overriding object while calling super to ensure the internal config
-        variables are populated correctly.
-
-        Will return true if the configuration has changed
-
-        :rtype: bool
-
-        """
-        if self.config.reload():
-            LOGGER.info('Configuration reloaded')
-            if self.logging_config.update(self.config.logging, self.debug):
-                LOGGER.info('Logging configuration updated')
-            return True
-        LOGGER.info('No configuration updates')
-        return False
+        raise NotImplementedError
 
     def run(self):
         """The core method for starting the application. Will setup logging,
@@ -339,13 +323,17 @@ class Controller(object):
 
     def setup(self):
         """Override to provide any required setup steps."""
-        pass
+        LOGGER.debug('Unextended %s.setup() method', self.__class__.__name__)
 
     def setup_signals(self):
         signal.signal(signal.SIGHUP, self.on_sighup)
         signal.signal(signal.SIGTERM, self.on_sigterm)
         signal.signal(signal.SIGUSR1, self.on_sigusr1)
         signal.signal(signal.SIGUSR2, self.on_sigusr2)
+
+    def shutdown(self):
+        """Override to provide any required shutdown steps."""
+        LOGGER.debug('Unextended %s.shutdown() method', self.__class__.__name__)
 
     def stop(self):
         """Override to implement shutdown steps."""
@@ -354,6 +342,9 @@ class Controller(object):
 
         # Clear out the timer
         signal.setitimer(signal.ITIMER_PROF, 0, 0)
+
+        # Call shutdown for classes to add shutdown steps
+        self.shutdown()
 
         # Wait for the current run to finish
         while self.is_running and self.is_waiting_to_stop:
