@@ -10,7 +10,7 @@ import yaml
 
 (major, minor, rev) = platform.python_version_tuple()
 if float('%s.%s' % (major, minor)) < 2.7:
-    from logutils import dictconfig as logging_config
+    import logutils.dictconfig as logging_config
 else:
     from logging import config as logging_config
 LOGGER = logging.getLogger(__name__)
@@ -39,8 +39,8 @@ class Config(object):
                                         'formatter': 'verbose'}},
                'incremental': False,
                'loggers': {'helper': {'handlers': ['console'],
-                                         'level': 'INFO',
-                                         'propagate': True}},
+                                      'level': 'INFO',
+                                      'propagate': True}},
                'root': {'handlers': [],
                         'level': logging.CRITICAL,
                         'propagate': True},
@@ -55,14 +55,12 @@ class Config(object):
         """
         self.application = Data()
         self.daemon = Data()
-        self.logging = Data()
         self._file_path = None
         self._values = Data()
         if file_path:
             self._file_path = self._validate(file_path)
             self._values = self._load_config_file()
         self._assign_defaults()
-        LOGGER.debug(self.logging)
 
     def _assign_defaults(self):
         if 'Application' in self._values:
@@ -75,10 +73,24 @@ class Config(object):
         else:
             self.daemon = Data(self.DAEMON)
 
-        if 'Logging' in self._values:
-            self.logging = dict(self._values['Logging'])
-        else:
-            self.logging = self.LOGGING
+    def get(self, name, default=None):
+        """Return the value for key if key is in the configuration, else default.
+
+        :param str name: The key name to return
+        :param mixed default: The default value for the key
+        :return: mixed
+
+        """
+        return self._values.get(name, default)
+
+    @property
+    def logging(self):
+        """Return the logging configuration in the form of a dictionary.
+
+        :rtype: dict
+
+        """
+        return self._values.get('Logging', Data()).dict() or self.LOGGING
 
     def reload(self):
         """Reload the configuration from disk returning True if the
@@ -95,7 +107,7 @@ class Config(object):
                 return False
 
             # Only update the configuration if the values differ
-            if cmp(values, self._values) == 0:
+            if hash(values) != hash(self._values):
                 self._values = values
                 self._assign_defaults()
                 return True
@@ -163,7 +175,8 @@ class LoggingConfig(object):
         :rtype: bool
 
         """
-        if cmp(self.config, configuration) != 0 and debug != self.debug:
+
+        if hash(self.config) != hash(configuration) and debug != self.debug:
             self.config = configuration
             self.debug = debug
             self._configure()
@@ -260,40 +273,127 @@ class Data(object):
             yield name
 
     def str(self):
+        """Return a string representation of the data object.
+
+        :rtype: str
+
+        """
         return str(self.__dict__)
 
     def dict(self):
+        """Return the data object as a dictionary.
+
+        :rtype: dict
+
+        """
         return dict(self.__dict__)
 
-    def copy(self):
-        return copy(self.__dict__)
+    def get(self, name, default=None):
+        """Return the value for key if key is in the dictionary, else default.
+        If default is not given, it defaults to None, so that this method
+        never raises a KeyError.
 
-    def get(self, name):
-        return self.__dict__.get(name)
+        :param str name: The key name to return
+        :param mixed default: The default value for the key
+        :return: mixed
 
-    def has_name(self, name):
+        """
+        return self.__dict__.get(name, default)
+
+    def has_key(self, name):
+        """Test for the presence of key in the data object. has_key() is
+        deprecated in favor of key in d.
+
+        :param name:
+        :return: bool
+
+        """
         return name in self.__dict__
 
     def items(self):
+        """Return a copy of the dictionary's list of (key, value) pairs.
+
+        :rtype: list
+
+        """
         return self.__dict__.items()
 
     def iteritems(self):
+        """Return an iterator over the data keys. See the note for
+        Data.items().
+
+        Using itervalues() while adding or deleting entries in the data object
+        may raise a RuntimeError or fail to iterate over all entries.
+
+        :rtype: iterator
+        :raises: RuntimeError
+
+        """
         return self.__dict__.iteritems()
 
     def itervalues(self):
+        """Return an iterator over the data values. See the note for
+        Data.items().
+
+        Using itervalues() while adding or deleting entries in the data object
+        may raise a RuntimeError or fail to iterate over all entries.
+
+        :rtype: iterator
+        :raises: RuntimeError
+
+        """
         return self.__dict__.itervalues()
 
     def keys(self):
+        """Return a copy of the dictionary's list of keys. See the note for
+        Data.items()
+
+        :rtype: list
+
+        """
         return self.__dict__.keys()
 
-    def pop(self, name, d=None):
-        return self.__dict__.pop(name, d)
+    def pop(self, name, default=None):
+        """If key is in the dictionary, remove it and return its value, else
+        return default. If default is not given and key is not in the
+        dictionary, a KeyError is raised.
 
-    def setdefault(self, name, default):
+        :param str name: The key name
+        :param mixed default: The default value
+        :raises: KeyError
+
+        """
+        return self.__dict__.pop(name, default)
+
+    def setdefault(self, name, default=None):
+        """If key is in the dictionary, return its value. If not, insert key
+        with a value of default and return default. default defaults to None.
+
+        :param str name: The key
+        :param mixed default: The value
+        :return: mixed
+
+        """
         self.__dict__.setdefault(name, default)
 
     def update(self, other=None, **kwargs):
+        """Update the dictionary with the key/value pairs from other,
+        overwriting existing keys. update() accepts either another dictionary
+        object or an iterable of key/value pairs (as tuples or other iterables
+        of length two). If keyword arguments are specified, the dictionary is
+        then updated with those key/value pairs: d.update(red=1, blue=2).
+
+        :param dict other: Dict or other iterable
+        :param dict **kwargs: Key/value pairs to update
+        :rtype: None
+
+        """
         self.__dict__.update(other, **kwargs)
 
     def values(self):
+        """Return the configuration values
+
+        :rtype: list
+
+        """
         return self.__dict__.values()
