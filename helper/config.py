@@ -143,6 +143,15 @@ class Config(object):
         return file_path
 
 
+try:
+    # not available in python 2.6
+    from logging import NullHandler
+except ImportError:
+    class NullHandler(logging.Handler):
+        def emit(self, record):
+            pass
+
+
 class LoggingConfig(object):
     """The Logging class is used for abstracting away dictConfig logging
     semantics and can be used by sub-processes to ensure consistent logging
@@ -161,6 +170,10 @@ class LoggingConfig(object):
         :param bool debug: Toggles use of debug_only loggers
 
         """
+        # Force a NullLogger for some libraries that require it
+        root_logger = logging.getLogger()
+        root_logger.addHandler(NullHandler())
+
         self.config = configuration
         self.debug = debug
         self._configure()
