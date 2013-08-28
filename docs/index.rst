@@ -15,6 +15,7 @@ Documentation
    args
    api
    troubleshooting
+   history
 
 Version:
     |release|
