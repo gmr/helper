@@ -90,7 +90,7 @@ class Config(object):
         :rtype: dict
 
         """
-        return self._values.get('Logging', Data()).dict() or self.LOGGING
+        return self._values.get('Logging') or self.LOGGING
 
     def reload(self):
         """Reload the configuration from disk returning True if the
