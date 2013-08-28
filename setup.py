@@ -1,5 +1,8 @@
 import platform
-from setuptools import setup
+try:
+    from setuptools import setup
+except ImportError:
+    from distutils.core import setup
 
 requirements = ['pyyaml']
 tests_require = ['mock']
@@ -12,7 +15,7 @@ if float('%s.%s' % (major, minor)) < 2.7:
     tests_require.append('unittest2')
 
 setup(name='helper',
-      version='2.0.0',
+      version='2.0.1',
       classifiers=[
           'Development Status :: 5 - Production/Stable',
           'Environment :: Console',
@@ -46,6 +49,7 @@ setup(name='helper',
       author_email='gavinmroy@gmail.com',
       url='https://helper.readthedocs.org',
       packages=['helper'],
+      package_data={'': ['LICENSE', 'README.md']},
       install_requires=requirements,
       tests_require=tests_require,
       zip_safe=True)
