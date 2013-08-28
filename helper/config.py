@@ -13,6 +13,9 @@ if float('%s.%s' % (major, minor)) < 2.7:
     import logutils.dictconfig as logging_config
 else:
     from logging import config as logging_config
+
+from helper import NullHandler
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -28,7 +31,7 @@ class Config(object):
               'pidfile': None,
               'prevent_core': True}
     LOGGING_FORMAT = ('%(levelname) -10s %(asctime)s %(process)-6d '
-                      '%(processName) -15s %(threadName)-10s %(name) -25s '
+                      '%(processName) -20s %(threadName)-12s %(name) -30s '
                       '%(funcName) -25s L%(lineno)-6d: %(message)s')
     LOGGING = {'disable_existing_loggers': True,
                'filters': dict(),
@@ -90,7 +93,14 @@ class Config(object):
         :rtype: dict
 
         """
-        return self._values.get('Logging') or self.LOGGING
+        config = self.LOGGING
+        config_in = self._values.get('Logging', dict())
+        for section in ['formatters', 'handlers', 'loggers', 'filters']:
+            if section in config_in:
+                for key in config_in[section]:
+                    config[section][key] = config_in[section][key]
+        LOGGER.debug(config)
+        return config
 
     def reload(self):
         """Reload the configuration from disk returning True if the
@@ -143,15 +153,6 @@ class Config(object):
         return file_path
 
 
-try:
-    # not available in python 2.6
-    from logging import NullHandler
-except ImportError:
-    class NullHandler(logging.Handler):
-        def emit(self, record):
-            pass
-
-
 class LoggingConfig(object):
     """The Logging class is used for abstracting away dictConfig logging
     semantics and can be used by sub-processes to ensure consistent logging
@@ -199,12 +200,12 @@ class LoggingConfig(object):
     def _configure(self):
         """Configure the Python stdlib logger"""
         if self.debug is not None and not self.debug:
-            self._remove_debug_only_handlers()
-        self._remove_debug_only_from_handlers()
+            self._remove_debug_handlers()
+        self._remove_debug_only()
         logging_config.dictConfig(self.config)
         logging.captureWarnings(True)
 
-    def _remove_debug_only_from_handlers(self):
+    def _remove_debug_only(self):
         """Iterate through each handler removing the invalid dictConfig key of
         debug_only.
 
@@ -214,7 +215,7 @@ class LoggingConfig(object):
             if self.DEBUG_ONLY in self.config[self.HANDLERS][handler]:
                 del self.config[self.HANDLERS][handler][self.DEBUG_ONLY]
 
-    def _remove_debug_only_handlers(self):
+    def _remove_debug_handlers(self):
         """Remove any handlers with an attribute of debug_only that is True and
         remove the references to said handlers from any loggers that are
         referencing them.
@@ -231,7 +232,7 @@ class LoggingConfig(object):
                 logger = self.config[self.LOGGERS][logger]
                 if handler in logger[self.HANDLERS]:
                     logger[self.HANDLERS].remove(handler)
-        self._remove_debug_only_from_handlers()
+        self._remove_debug_only()
 
 
 class Data(object):

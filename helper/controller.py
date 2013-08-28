@@ -368,7 +368,7 @@ class Controller(object):
         :rtype: int
 
         """
-        return self.config.application.wake_interval or self.WAKE_INTERVAL
+        return self.config.application.get('wake_interval') or self.WAKE_INTERVAL
 
     def _sleep(self):
         """Setup the next alarm to fire and then wait for it to fire."""
