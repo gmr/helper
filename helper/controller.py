@@ -3,6 +3,7 @@ Helper Controller Class
 
 """
 import logging
+import os
 import signal
 import sys
 import time
@@ -22,7 +23,7 @@ class Controller(object):
     like a blocking IOLoop, overwrite the Controller.run method.
 
     """
-    APPNAME = sys.argv[0]
+    APPNAME = sys.argv[0].split(os.sep)[-1]
     VERSION = __version__
 
     #: When shutting down, how long should sleeping block the interpreter while
@@ -241,7 +242,7 @@ class Controller(object):
         long running process.
 
         """
-        LOGGER.info('%s %s started', self.APPNAME, self.VERSION)
+        LOGGER.info('%s v%s started', self.APPNAME, self.VERSION)
         self.setup()
         self.process()
         signal.signal(signal.SIGALRM, self._wake)
