@@ -99,6 +99,10 @@ class Daemon(object):
         try:
             output = subprocess.check_output('ps a | grep "%s"' % pattern,
                                              shell=True)
+        except AttributeError:
+            # Python 2.6
+            stdin, stdout, stderr = os.popen3('ps a | grep "%s"' % pattern)
+            output = stdout.read()
         except subprocess.CalledProcessError:
             return False
         pids = [int(pid) for pid in (re.findall(r'^([0-9]+)\s',
