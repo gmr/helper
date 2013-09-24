@@ -129,7 +129,7 @@
 $I:.:+I=................ .......... ........................................=:
  :8=+.,?$:.......................................  .... .............    ..,,= .
 """
-__version__ = '2.0.4'
+__version__ = '2.0.5'
 
 # Add NullHandler to prevent logging warnings
 import logging
@@ -140,7 +140,8 @@ except ImportError:
     class NullHandler(logging.Handler):
         def emit(self, record):
             pass
-logging.getLogger(__name__).addHandler(NullHandler())
+
+logging.getLogger('helper').addHandler(NullHandler())
 
 # Import the Controller for extending
 from helper.controller import Controller

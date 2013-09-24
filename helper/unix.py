@@ -13,6 +13,10 @@ import re
 import subprocess
 import sys
 import traceback
+import warnings
+
+# Ignore the DeprecationWarning caused by os.popen3 in Python 2.6
+warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
 LOGGER = logging.getLogger(__name__)
 
@@ -181,9 +185,10 @@ class Daemon(object):
                                  ' %s' % exception_log)
             return exception_log
 
-        for exception_log in ['/var/log/%s.errors' % sys.argv[0],
-                              '/var/tmp/%s.errors' % sys.argv[0],
-                              '/tmp/%s.errors' % sys.argv[0]]:
+        app = sys.argv[0].split('/')[-1]
+        for exception_log in ['/var/log/%s.errors' % app,
+                              '/var/tmp/%s.errors' % app,
+                              '/tmp/%s.errors' % app]:
             if os.access(path.dirname(exception_log), os.W_OK):
                 return exception_log
 
