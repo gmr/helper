@@ -203,7 +203,10 @@ class LoggingConfig(object):
             self._remove_debug_handlers()
         self._remove_debug_only()
         logging_config.dictConfig(self.config)
-        logging.captureWarnings(True)
+        try:
+            logging.captureWarnings(True)
+        except AttributeError:
+            pass
 
     def _remove_debug_only(self):
         """Iterate through each handler removing the invalid dictConfig key of
