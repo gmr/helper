@@ -1,6 +1,7 @@
 Helper
 ======
 Helper is a development library for quickly writing configurable applications and daemons.
+
 [![PyPI version](https://badge.fury.io/py/helper.png)](http://badge.fury.io/py/helper) [![Downloads](https://pypip.in/d/helper/badge.png)](https://crate.io/packages/helper) [![Build Status](https://travis-ci.org/gmr/helper.png?branch=master)](https://travis-ci.org/gmr/helper)
 
 Platforms Supported
