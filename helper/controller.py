@@ -83,7 +83,10 @@ class Controller(object):
         self.set_state(self.STATE_INITIALIZING)
         self.args = args
         self.debug = args.foreground
-        self.config = config.Config(args.config)
+        try:
+            self.config = config.Config(args.config)
+        except ValueError:
+            sys.exit(1)
         self.logging_config = config.LoggingConfig(self.config.logging,
                                                    self.debug)
 
