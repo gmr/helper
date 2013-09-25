@@ -31,6 +31,7 @@ package.
 
 History
 -------
+2.1.0 - Bugfixes: Use pidfile from configuration if specified, don't show warning about not having a logger in helper.unix if no logger is defined, config obj default/value assignment methodology
 2.0.2 - Fix a bug where wake_interval default was not used if wake_interval was not provided in the config. Make logging config an overlay of the default logging config.
 2.0.1 - setup.py bugfix
 2.0.0 - clihelper renamed to helper with major refactoring, Windows support still
