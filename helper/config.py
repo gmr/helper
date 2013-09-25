@@ -6,6 +6,7 @@ format and providing sane defaults for parts that don't have any.
 import logging
 from os import path
 import platform
+import sys
 import yaml
 
 (major, minor, rev) = platform.python_version_tuple()
@@ -56,25 +57,25 @@ class Config(object):
         :param str file_path:
 
         """
-        self.application = Data()
-        self.daemon = Data()
+        self.application = Data(self.APPLICATION)
+        self.daemon = Data(self.DAEMON)
         self._file_path = None
         self._values = Data()
         if file_path:
             self._file_path = self._validate(file_path)
             self._values = self._load_config_file()
-        self._assign_defaults()
+        self._assign_values(self.application, self._values['Application'])
+        self._assign_values(self.daemon, self._values['Daemon'])
 
-    def _assign_defaults(self):
-        if 'Application' in self._values:
-            self.application = Data(self._values['Application'])
-        else:
-            self.application = Data(self.APPLICATION)
+    def _assign_values(self, obj, values):
+        """Assign values to the object passed in from the dictionary of values.
 
-        if 'Daemon' in self._values:
-            self.daemon = Data(self._values['Daemon'])
-        else:
-            self.daemon = Data(self.DAEMON)
+        :param Data obj: Data object to assign values to
+        :param dict values: Values to assign
+
+        """
+        for key in values:
+            setattr(obj, key, values[key])
 
     def get(self, name, default=None):
         """Return the value for key if key is in the configuration, else default.
@@ -136,7 +137,14 @@ class Config(object):
         try:
             return yaml.safe_load(config)
         except yaml.YAMLError as error:
-            raise ValueError('Error in the configuration file: %s' % error)
+            message = '\n'.join(['    > %s' % line
+                                 for line in str(error).split('\n')])
+            sys.stderr.write("\n\n  Error in the configuration file:\n\n"
+                             "%s\n\n" % message)
+            sys.stderr.write("  Configuration should be a valid YAML file.\n\n")
+            sys.stderr.write("  YAML format validation available at "
+                             "http://yamllint.com\n")
+            raise ValueError(error)
 
     def _validate(self, file_path):
         """Normalize the path provided and ensure the file path, raising a
@@ -177,7 +185,7 @@ class LoggingConfig(object):
 
         self.config = configuration
         self.debug = debug
-        self._configure()
+        self.configure()
 
     def update(self, configuration, debug=None):
         """Update the internal configuration values, removing debug_only
@@ -193,11 +201,11 @@ class LoggingConfig(object):
         if hash(self.config) != hash(configuration) and debug != self.debug:
             self.config = configuration
             self.debug = debug
-            self._configure()
+            self.configure()
             return True
         return False
 
-    def _configure(self):
+    def configure(self):
         """Configure the Python stdlib logger"""
         if self.debug is not None and not self.debug:
             self._remove_debug_handlers()
@@ -230,7 +238,6 @@ class LoggingConfig(object):
                 remove.append(handler)
         for handler in remove:
             del self.config[self.HANDLERS][handler]
-
             for logger in self.config[self.LOGGERS].keys():
                 logger = self.config[self.LOGGERS][logger]
                 if handler in logger[self.HANDLERS]:
