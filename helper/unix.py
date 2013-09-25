@@ -15,8 +15,9 @@ import sys
 import traceback
 import warnings
 
+
 # Ignore the DeprecationWarning caused by os.popen3 in Python 2.6
-warnings.filterwarnings("ignore", category=DeprecationWarning) 
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,9 +32,14 @@ class Daemon(object):
         to run as, a pid file, if core dumps should be prevented and a path to
         write out exception logs to.
 
-        :param helper.Controller controller: The controller to daaemonize & run
+        :param controller: The controller to daaemonize & run
+        :type controller: helper.controller.Controller
 
         """
+        # The logger is reset by the time it gets here, fix to avoid warnings
+        from helper import NullHandler
+        LOGGER.addHandler(NullHandler())
+
         self.controller = controller
         self.pidfile_path = self._get_pidfile_path()
 
@@ -204,25 +210,22 @@ class Daemon(object):
             return None
         return grp.getgrnam(self.controller.config.daemon.group).gr_gid
 
-    def _get_pidfile_path(self, pidfile=None):
+    def _get_pidfile_path(self):
         """Return the normalized path for the pidfile, raising an
         exception if it can not written to.
 
-        :param str pidfile: The user specified pid file, if any
         :return: str
         :raises: ValueError
         :raises: OSError
 
         """
-        if pidfile:
-            pidfile = path.abspath(pidfile)
+        if self.controller.config.daemon.pidfile:
+            pidfile = path.abspath(self.controller.config.daemon.pidfile)
             if not os.access(path.dirname(pidfile), os.W_OK):
                 raise ValueError('Cannot write to specified pid file path'
                                  ' %s' % pidfile)
             return pidfile
-
         app = sys.argv[0].split('/')[-1]
-
         for pidfile in ['%s/pids/%s.pid' % (os.getcwd(), app),
                          '/var/run/%s.pid' % app,
                          '/var/run/%s/%s.pid' % (app, app),
@@ -231,7 +234,6 @@ class Daemon(object):
                          '%s.pid' % app]:
             if os.access(path.dirname(pidfile), os.W_OK):
                 return pidfile
-
         raise OSError('Could not find an appropriate place for a pid file')
 
     def _get_uid(self):
@@ -246,8 +248,7 @@ class Daemon(object):
 
     def _remove_pidfile(self):
         """Remove the pid file from the filesystem"""
-        with open('/tmp/dbug.log', 'a') as handle:
-            handle.write('Removing %s\n' % self.pidfile_path)
+        LOGGER.debug('Removing pidfile: %s', self.pidfile_path)
         try:
             os.unlink(self.pidfile_path)
         except OSError:
@@ -255,5 +256,6 @@ class Daemon(object):
 
     def _write_pidfile(self):
         """Write the pid file out with the process number in the pid file"""
+        LOGGER.debug('Writing pidfile: %s', self.pidfile_path)
         with open(self.pidfile_path, "w") as handle:
             handle.write(str(os.getpid()))
