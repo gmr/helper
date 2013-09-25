@@ -141,7 +141,7 @@ except ImportError:
         def emit(self, record):
             pass
 
-logging.getLogger('helper').addHandler(NullHandler())
+logging.getLogger().addHandler(NullHandler())
 
 # Import the Controller for extending
 from helper.controller import Controller
