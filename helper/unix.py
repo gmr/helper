@@ -117,7 +117,8 @@ class Daemon(object):
             return False
         pids = [int(pid) for pid in (re.findall(r'^([0-9]+)\s',
                                                 output.decode('latin-1')))]
-        pids.remove(os.getpid())
+        if os.getpid() in pids:
+            pids.remove(os.getpid())
         if not pids:
             return False
         if len(pids) == 1:
