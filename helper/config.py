@@ -64,8 +64,8 @@ class Config(object):
         if file_path:
             self._file_path = self._validate(file_path)
             self._values = self._load_config_file()
-        self._assign_values(self.application, self._values['Application'])
-        self._assign_values(self.daemon, self._values['Daemon'])
+        self._assign_values(self.application, self._values.get('Application'))
+        self._assign_values(self.daemon, self._values.get('Daemon'))
 
     def _assign_values(self, obj, values):
         """Assign values to the object passed in from the dictionary of values.
@@ -74,7 +74,7 @@ class Config(object):
         :param dict values: Values to assign
 
         """
-        for key in values:
+        for key in values or dict():
             setattr(obj, key, values[key])
 
     def get(self, name, default=None):
