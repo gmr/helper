@@ -153,6 +153,7 @@ if sys.platform == 'win32':
 else:
     from helper import unix as platform
 
+
 # Import config and parser for start
 from helper import config
 from helper import parser
@@ -166,7 +167,7 @@ def start(ctrl):
 
     """
     args = parser.parse()
-    obj = ctrl(args)
+    obj = ctrl(args, platform.operating_system())
     if args.foreground:
         try:
             obj.start()

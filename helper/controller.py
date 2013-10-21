@@ -4,6 +4,7 @@ Helper Controller Class
 """
 import logging
 import os
+import platform
 import signal
 import sys
 import time
@@ -73,11 +74,12 @@ class Controller(object):
     # Default state
     _state = None
 
-    def __init__(self, args):
+    def __init__(self, args, operating_system):
         """Create an instance of the controller passing in the debug flag,
         the options and arguments from the cli parser.
 
         :param argparse.Namespace args: Command line arguments
+        :param str operating_system: Operating system name from helper.platform
 
         """
         self.set_state(self.STATE_INITIALIZING)
@@ -89,6 +91,7 @@ class Controller(object):
             sys.exit(1)
         self.logging_config = config.LoggingConfig(self.config.logging,
                                                    self.debug)
+        self.operating_system = operating_system
 
     def cleanup(self):
         """Override this method to cleanly shutdown the application."""
@@ -366,13 +369,26 @@ class Controller(object):
         self._stopped()
 
     @property
+    def system_platform(self):
+        """Return a tuple containing the operating system, python
+        implementation (CPython, pypy, etc), and python version.
+
+        :rtype: tuple(str, str, str)
+
+        """
+        return (self.operating_system,
+                platform.python_implementation(),
+                platform.python_version())
+
+    @property
     def wake_interval(self):
         """Property method that returns the wake interval in seconds.
 
         :rtype: int
 
         """
-        return self.config.application.get('wake_interval') or self.WAKE_INTERVAL
+        return (self.config.application.get('wake_interval') or
+                self.WAKE_INTERVAL)
 
     def _sleep(self):
         """Setup the next alarm to fire and then wait for it to fire."""

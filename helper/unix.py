@@ -8,6 +8,7 @@ import grp
 import logging
 import os
 from os import path
+import platform
 import pwd
 import re
 import subprocess
@@ -20,6 +21,20 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 LOGGER = logging.getLogger(__name__)
+
+
+def operating_system():
+    """Return a string identifying the operating system the application
+    is running on.
+
+    :rtype: str
+
+    """
+    distribution = ' '.join(platform.linux_distribution()).strip()
+    os_platform = platform.platform(True, True)
+    if distribution:
+        os_platform += ' (%s)' % distribution
+    return os_platform
 
 
 class Daemon(object):
