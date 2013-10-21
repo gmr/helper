@@ -33,6 +33,7 @@ package.
 
 History
 -------
+- 2.2.2 - Minor MANIFEST.in fix for README.rst
 - 2.2.1 - Minor setup.py fix for version number.
 - 2.2.0 - Add new attribute to describe operating system and environment to
           Controller and helper.unix, helper.windows.
