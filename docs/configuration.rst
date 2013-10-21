@@ -1,10 +1,12 @@
 Configuration Format
 ====================
-helper uses `logging.config.dictConfig <http://docs.python.org/library/logging.config.html>`_ module to create a flexible method for configuring the python standard logging module. If Python 2.6 is used, `logutils.dictconfig.dictConfig <https://pypi.python.org/pypi/logutils>`_ is used instead.
+helper has a standard configuration file format for creating consistent, easy to configure applications using the `YAML <http://yaml.org>_` file format. The configuration file has three case-sensitive sections that are required: :ref:`application`, :ref:`daemon`, and :ref:`logging`.
+
+
 
 `YAML <http://yaml.org>`_ is used for the configuration file for helper based applications and will automatically be loaded and referenced for all the required information to start your application. The configuration may be reloaded at runtime by sending a USR1 signal to parent process.
 
-The configuration file has three case-sensitive sections that are required: :ref:`application`, :ref:`daemon`, and :ref:`logging`.
+
 
 .. _application:
 
@@ -29,7 +31,9 @@ pidfile
 
 Logging
 -------
-As previously mentioned, the Logging section uses the Python standard library `dictConfig format <http://docs.python.org/library/logging.config.html>`_. The following basic example illustrates all of the required sections in the dictConfig format, implemented in YAML::
+helper uses `logging.config.dictConfig <http://docs.python.org/library/logging.config.html>`_ module to create a flexible method for configuring the python standard logging module. If Python 2.6 is used, `logutils.dictconfig.dictConfig <https://pypi.python.org/pypi/logutils>`_ is used instead.
+
+The following basic example illustrates all of the required sections in the dictConfig format, implemented in YAML::
 
     version: 1
     formatters: []
