@@ -1,5 +1,6 @@
 Version History
 ===============
+- 2.2.3 - 2013-10-21 - Minor MANIFEST.in fix for setup.py
 - 2.2.2 - 2013-10-21 - Minor MANIFEST.in fix for README.rst
 - 2.2.1 - 2013-10-21 - Minor setup.py version number fix
 - 2.2.0 - 2013-10-21 - Add new attribute to describe operating system and environment to helper.Controller and helper.unix, helper.windows.
