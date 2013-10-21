@@ -33,6 +33,7 @@ package.
 
 History
 -------
+- 2.2.1 - Minor setup.py fix for version number.
 - 2.2.0 - Add new attribute to describe operating system and environment to
           Controller and helper.unix, helper.windows.
 - 2.1.1 - Bugfix for dealing with stale pids

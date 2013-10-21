@@ -1,5 +1,6 @@
 Version History
 ===============
+2.2.1 - 2013-10-21 - Minor setup.py version number fix
 2.2.0 - 2013-10-21 - Add new attribute to describe operating system and environment to helper.Controller and helper.unix, helper.windows.
 2.1.1 - 2013-10-10 - Bugfix for dealing with stale pids
 2.1.0 - 2013-09-24 - Bugfixes: Use pidfile from configuration if specified, don't show warning about not having a logger in helper.unix if no logger is defined, config obj default/value assignment methodology
