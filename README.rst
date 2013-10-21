@@ -45,3 +45,10 @@ History
 - 2.0.1 - setup.py bugfix
 - 2.0.0 - clihelper renamed to helper with major refactoring, Windows support
           still a work in progress.
+
+.. |PyPI version| image:: https://badge.fury.io/py/helper.png
+   :target: http://badge.fury.io/py/helper
+.. |Downloads| image:: https://pypip.in/d/helper/badge.png
+   :target: https://crate.io/packages/helper
+.. |Build Status| image:: https://travis-ci.org/gmr/helper.png?branch=master
+   :target: https://travis-ci.org/gmr/helper
