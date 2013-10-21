@@ -30,6 +30,8 @@ def operating_system():
     :rtype: str
 
     """
+    if platform.system() == 'Darwin':
+        return 'OS X Version %s' % platform.mac_ver()[0]
     distribution = ' '.join(platform.linux_distribution()).strip()
     os_platform = platform.platform(True, True)
     if distribution:
