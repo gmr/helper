@@ -1,5 +1,5 @@
-clihelper API
-=============
+helper API
+==========
 
 .. toctree::
    :maxdepth: 1
