@@ -3,8 +3,7 @@ python:
     - 2.6
     - 2.7
     - pypy
-    - 3.2
-    - 3.3
 install:
-    - "python setup.py install"
+    - if [[ $TRAVIS_PYTHON_VERSION == '2.6' ]]; then pip install --use-mirrors unittest2; fi
+    - "pip install -r requires.txt --use-mirrors"
 script: nosetests
