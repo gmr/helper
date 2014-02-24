@@ -305,12 +305,19 @@ class Data(object):
         return str(self.__dict__)
 
     def dict(self):
-        """Return the data object as a dictionary.
+        """Return the data object as a dictionary, recursively casting children
+        that are Data objects as well.
 
         :rtype: dict
 
         """
-        return dict(self.__dict__)
+        output = dict()
+        for key, value in self.iteritems():
+            if isinstance(value, Data):
+                output[key] = value.dict()
+            else:
+                output[key] = value
+        return output
 
     def get(self, name, default=None):
         """Return the value for key if key is in the dictionary, else default.
