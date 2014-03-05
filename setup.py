@@ -52,4 +52,7 @@ setup(name='helper',
       package_data={'': ['LICENSE', 'README.rst']},
       install_requires=requirements,
       tests_require=tests_require,
-      zip_safe=True)
+      zip_safe=True,
+      entry_points={
+          'distutils.commands': ['run_helper = helper.setupext:RunCommand'],
+      })
