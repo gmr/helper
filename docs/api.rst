@@ -7,3 +7,4 @@ helper API
    controller
    logging
    parser
+   setupext
