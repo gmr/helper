@@ -61,7 +61,7 @@ class Daemon(object):
 
         self.controller = controller
         self.config = self.controller.config
-        self.pidfile_path = None
+        self.pidfile_path = self._get_pidfile_path()
         self._gid = None
         self._uid = None
 
@@ -87,25 +87,30 @@ class Daemon(object):
         if self._is_already_running():
             LOGGER.error('Is already running')
             sys.exit(1)
-
         try:
             self._daemonize()
             self.controller.start()
         except Exception as error:
-            with open(self._get_exception_log_path(), 'a') as handle:
-                timestamp = datetime.datetime.now().isoformat()
-                handle.write('{:->80}\n'.format(' [START]'))
-                handle.write('%s Exception [%s]\n' % (sys.argv[0], timestamp))
-                handle.write('{:->80}\n'.format(' [INFO]'))
-                handle.write('Interpreter: %s\n' % sys.executable)
-                handle.write('CLI arguments: %s\n' % ' '.join(sys.argv))
-                handle.write('Exception: %s\n' % error)
-                handle.write('Traceback:\n')
-                output = traceback.format_exception(*sys.exc_info())
-                _dev_null = [(handle.write(line),
-                             sys.stdout.write(line)) for line in output]
-                handle.write('{:->80}\n'.format(' [END]'))
-                handle.flush()
+            sys.stderr.write('\nERROR: Startup of %s Failed\n.' %
+                             sys.argv[0].split('/')[-1])
+            exception_log = self._get_exception_log_path()
+            if exception_log:
+                with open(exception_log, 'a') as handle:
+                    timestamp = datetime.datetime.now().isoformat()
+                    handle.write('{:->80}\n'.format(' [START]'))
+                    handle.write('%s Exception [%s]\n' % (sys.argv[0],
+                                                          timestamp))
+                    handle.write('{:->80}\n'.format(' [INFO]'))
+                    handle.write('Interpreter: %s\n' % sys.executable)
+                    handle.write('CLI arguments: %s\n' % ' '.join(sys.argv))
+                    handle.write('Exception: %s\n' % error)
+                    handle.write('Traceback:\n')
+                    output = traceback.format_exception(*sys.exc_info())
+                    _dev_null = [(handle.write(line),
+                                 sys.stdout.write(line)) for line in output]
+                    handle.write('{:->80}\n'.format(' [END]'))
+                    handle.flush()
+                sys.stderr.write('\nException log: %s\n\n' % exception_log)
             sys.exit(1)
 
     @property
@@ -123,17 +128,6 @@ class Daemon(object):
         return self._gid
 
     @property
-    def gids(self):
-        """Return the group ids that the process has access to.
-
-        :rtype: list
-
-        """
-        uname = self.config.daemon.user or pwd.getpwuid(self.uid)[0]
-        return [grp.getgrgid(g.gr_name) for g in grp.getgrall()
-                if uname in grp.gr_mem]
-
-    @property
     def uid(self):
         """Return the user id that the process will run as
 
@@ -146,6 +140,107 @@ class Daemon(object):
             else:
                 self._uid = os.getuid()
         return self._uid
+
+    def _daemonize(self):
+        """Fork into a background process and setup the process, copied in part
+        from http://www.jejik.com/files/examples/daemon3x.py
+
+        """
+        LOGGER.info('Forking %s into the background', sys.argv[0])
+
+        # Write the pidfile if current uid != final uid
+        if os.getuid() != self.uid:
+            fd = open(self.pidfile_path, 'w')
+            os.fchmod(fd.fileno(), 0644)
+            os.fchown(fd.fileno(), self.uid, self.gid)
+            fd.close()
+
+        try:
+            pid = os.fork()
+            if pid > 0:
+                    sys.exit(0)
+        except OSError as error:
+                raise OSError('Could not fork off parent: %s', error)
+
+        # Set the user id
+        if self.uid != os.getuid():
+            os.setuid(self.uid)
+
+        # Set the group id
+        if self.gid != os.getgid():
+            try:
+                os.setgid(self.gid)
+            except OSError as error:
+                LOGGER.error('Could not set group: %s', error)
+
+        # Decouple from parent environment
+        os.chdir('/')
+        os.setsid()
+        os.umask(0o022)
+
+        # Fork again
+        try:
+            pid = os.fork()
+            if pid > 0:
+                sys.exit(0)
+        except OSError as error:
+            raise OSError('Could not fork child: %s', error)
+
+        # redirect standard file descriptors
+        sys.stdout.flush()
+        sys.stderr.flush()
+        si = open(os.devnull, 'r')
+        so = open(os.devnull, 'a+')
+        se = open(os.devnull, 'a+')
+        os.dup2(si.fileno(), sys.stdin.fileno())
+        os.dup2(so.fileno(), sys.stdout.fileno())
+        os.dup2(se.fileno(), sys.stderr.fileno())
+
+        # Automatically call self._remove_pidfile when the app exits
+        atexit.register(self._remove_pidfile)
+        self._write_pidfile()
+
+    @staticmethod
+    def _get_exception_log_path():
+        """Return the normalized path for the connection log, raising an
+        exception if it can not written to.
+
+        :return: str
+
+        """
+        app = sys.argv[0].split('/')[-1]
+        for exception_log in ['/var/log/%s.errors' % app,
+                              '/var/tmp/%s.errors' % app,
+                              '/tmp/%s.errors' % app]:
+            if os.access(path.dirname(exception_log), os.W_OK):
+                return exception_log
+        return None
+
+    def _get_pidfile_path(self):
+        """Return the normalized path for the pidfile, raising an
+        exception if it can not written to.
+
+        :return: str
+        :raises: ValueError
+        :raises: OSError
+
+        """
+        if self.config.daemon.pidfile:
+            pidfile = path.abspath(self.config.daemon.pidfile)
+            if not os.access(path.dirname(pidfile), os.W_OK):
+                raise ValueError('Cannot write to specified pid file path'
+                                 ' %s' % pidfile)
+            return pidfile
+        app = sys.argv[0].split('/')[-1]
+        for pidfile in ['%s/pids/%s.pid' % (os.getcwd(), app),
+                        '/var/run/%s.pid' % app,
+                        '/var/run/%s/%s.pid' % (app, app),
+                        '/var/tmp/%s.pid' % app,
+                        '/tmp/%s.pid' % app,
+                        '%s.pid' % app]:
+            if os.access(path.dirname(pidfile), os.W_OK):
+                return pidfile
+        raise OSError('Could not find an appropriate place for a pid file')
 
     def _is_already_running(self):
         """Check to see if the process is running, first looking for a pidfile,
@@ -187,136 +282,6 @@ class Daemon(object):
             pids = pids[0]
         sys.stderr.write('Process already running as pid # %s\n' % pids)
         return True
-
-    def _daemonize(self):
-        """Fork into a background process and setup the process, copied in part
-        from http://www.jejik.com/files/examples/daemon3x.py
-
-        """
-        LOGGER.info('Forking %s into the background', sys.argv[0])
-        try:
-            pid = os.fork()
-            if pid > 0:
-                    sys.exit(0)
-        except OSError as error:
-                raise OSError('Could not fork off parent: %s', error)
-
-        # Set the user id
-        if self.uid != os.getuid():
-            os.setuid(self.uid)
-
-        # Set the group id
-        if self.gid != os.getgid():
-            os.setgid(self.gid)
-
-        # Decouple from parent environment
-        os.chdir('/')
-        os.setsid()
-        os.umask(0o022)
-
-        # Fork again
-        try:
-            pid = os.fork()
-            if pid > 0:
-                sys.exit(0)
-        except OSError as error:
-            raise OSError('Could not fork child: %s', error)
-
-        # redirect standard file descriptors
-        sys.stdout.flush()
-        sys.stderr.flush()
-        si = open(os.devnull, 'r')
-        so = open(os.devnull, 'a+')
-        se = open(os.devnull, 'a+')
-        os.dup2(si.fileno(), sys.stdin.fileno())
-        os.dup2(so.fileno(), sys.stdout.fileno())
-        os.dup2(se.fileno(), sys.stderr.fileno())
-
-        # Get the path for the pidfile as the forked daemon
-        self.pidfile_path = self._get_pidfile_path()
-
-        # Automatically call self._remove_pidfile when the app exits
-        atexit.register(self._remove_pidfile)
-        self._write_pidfile()
-
-    @staticmethod
-    def _get_exception_log_path(exception_log=None):
-        """Return the normalized path for the connection log, raising an
-        exception if it can not written to.
-
-        :param str exception_log: The path the user passed in, if any
-        :return: str
-        :raises: ValueError
-        :raises: OSError
-
-        """
-        if exception_log:
-            if not os.access(exception_log, os.W_OK):
-                raise ValueError('Cannot write to specified exception log path'
-                                 ' %s' % exception_log)
-            return exception_log
-
-        app = sys.argv[0].split('/')[-1]
-        for exception_log in ['/var/log/%s.errors' % app,
-                              '/var/tmp/%s.errors' % app,
-                              '/tmp/%s.errors' % app]:
-            if os.access(path.dirname(exception_log), os.W_OK):
-                return exception_log
-
-        raise OSError('Could not find an appropriate place for a exception log')
-
-    def _get_pidfile_path(self):
-        """Return the normalized path for the pidfile, raising an
-        exception if it can not written to.
-
-        :return: str
-        :raises: ValueError
-        :raises: OSError
-
-        """
-        if self.config.daemon.pidfile:
-            pidfile = path.abspath(self.config.daemon.pidfile)
-            if not self._is_path_writable(pidfile):
-                raise ValueError('Cannot write to specified pid file path'
-                                 ' %s' % pidfile)
-            return pidfile
-        app = sys.argv[0].split('/')[-1]
-        for pidfile in ['%s/pids/%s.pid' % (os.getcwd(), app),
-                        '/var/run/%s.pid' % app,
-                        '/var/run/%s/%s.pid' % (app, app),
-                        '/var/tmp/%s.pid' % app,
-                        '/tmp/%s.pid' % app,
-                        '%s.pid' % app]:
-            if self._is_path_writable(pidfile):
-                return pidfile
-        raise OSError('Could not find an appropriate place for a pid file')
-
-    def _is_path_writable(self, pidfile):
-        """Check to see if a path is writeable.
-
-        :param str pidfile: The path for the pidfile that is being checked
-        :rtype: bool
-
-        """
-        dir_path = path.dirname(pidfile)
-
-        # If the directory does not exist, exit
-        if not path.isdir(dir_path):
-            return False
-
-        # Get the directory stat
-        d_stat = os.stat(path.dirname(dir_path))
-
-        # If the user the daemon will run as is owner and owner can write
-        if d_stat.st_uid == self.uid and stat.S_IWUSR(d_stat):
-            return True
-
-        # Check to see if any of the user's gids can write to the path
-        if stat.S_IWGRP(d_stat):
-            return bool([g for g in self.gids if d_stat.st_gid == g])
-
-        # Nothing passed
-        return False
 
     def _remove_pidfile(self):
         """Remove the pid file from the filesystem"""
