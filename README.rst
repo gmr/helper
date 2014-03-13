@@ -33,6 +33,9 @@ package.
 
 History
 -------
+- 2.4.0 - Better startup exception reporting, improved pidfile ownership
+          handling, new run_helper command
+- 2.3.0 - umask fix
 - 2.2.2 - Minor setup.py fix for README.rst
 - 2.2.2 - Minor MANIFEST.in fix for README.rst
 - 2.2.1 - Minor setup.py fix for version number.
