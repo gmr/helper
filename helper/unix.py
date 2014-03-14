@@ -151,7 +151,7 @@ class Daemon(object):
         # Write the pidfile if current uid != final uid
         if os.getuid() != self.uid:
             fd = open(self.pidfile_path, 'w')
-            os.fchmod(fd.fileno(), 0644)
+            os.fchmod(fd.fileno(), 0o644)
             os.fchown(fd.fileno(), self.uid, self.gid)
             fd.close()
 

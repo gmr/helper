@@ -1,5 +1,6 @@
 Version History
 ===============
+- 2.4.1 - 2013-03-14 - Fix fchmod literal call in Python 3
 - 2.4.0 - 2013-03-13 - Better startup exception reporting, improved pidfile ownership handling, new run_helper command
 - 2.3.0 - 2013-02-07 - Fix for umask handling
 - 2.2.3 - 2013-10-21 - Minor MANIFEST.in fix for setup.py
