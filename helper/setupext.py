@@ -4,6 +4,11 @@ try:
 except ImportError:
     from distutils.core import Command
 
+try:
+    from functools import reduce
+except ImportError:
+    pass  # use the builtin for py 2.x
+
 from . import parser
 from . import platform
 
