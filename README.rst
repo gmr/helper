@@ -6,7 +6,7 @@ Helper is a development library for quickly writing configurable applications an
 
 Platforms Supported
 -------------------
-Python 2.6, 2.7, 3.2 and 3.3 on Unix (POSIX) and Windows (in process) platforms.
+Python 2.6+, 3.2+ on Unix (POSIX) and Windows (in process) platforms.
 
 Dependencies
 ------------
