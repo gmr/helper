@@ -53,9 +53,9 @@ History
 - 2.0.0 - clihelper renamed to helper with major refactoring, Windows support
           still a work in progress.
 
-.. |PyPI version| image:: https://badge.fury.io/py/helper.png
+.. |PyPI version| image:: https://badge.fury.io/py/helper.svg?
    :target: http://badge.fury.io/py/helper
-.. |Downloads| image:: https://pypip.in/d/helper/badge.png
+.. |Downloads| image:: https://pypip.in/d/helper/badge.svg?
    :target: https://crate.io/packages/helper
-.. |Build Status| image:: https://travis-ci.org/gmr/helper.png?branch=master
+.. |Build Status| image:: https://travis-ci.org/gmr/helper.svg?branch=master
    :target: https://travis-ci.org/gmr/helper
