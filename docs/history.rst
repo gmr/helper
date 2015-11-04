@@ -1,5 +1,7 @@
 Version History
 ===============
+- 2.4.2 - 2015-11-04 - Allow for 'root' section in logging config
+        - Import reduce from functools to suport Python 3
 - 2.4.1 - 2013-03-14 - Fix fchmod literal call in Python 3
 - 2.4.0 - 2013-03-13 - Better startup exception reporting, improved pidfile ownership handling, new run_helper command
 - 2.3.0 - 2013-02-07 - Fix for umask handling

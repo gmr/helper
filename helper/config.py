@@ -96,7 +96,7 @@ class Config(object):
         """
         config = self.LOGGING
         config_in = self._values.get('Logging', dict())
-        for section in ['formatters', 'handlers', 'loggers', 'filters']:
+        for section in ['formatters', 'handlers', 'loggers', 'filters', 'root']:
             if section in config_in:
                 for key in config_in[section]:
                     config[section][key] = config_in[section][key]
