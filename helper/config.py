@@ -3,11 +3,14 @@ Responsible for reading in configuration files, validating the proper
 format and providing sane defaults for parts that don't have any.
 
 """
+import json
 import logging
 from os import path
 import platform
 import sys
 import yaml
+
+from helper import NullHandler
 
 (major, minor, rev) = platform.python_version_tuple()
 if float('%s.%s' % (major, minor)) < 2.7:
@@ -15,7 +18,6 @@ if float('%s.%s' % (major, minor)) < 2.7:
 else:
     from logging import config as logging_config
 
-from helper import NullHandler
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,10 +66,14 @@ class Config(object):
         if file_path:
             self._file_path = self._validate(file_path)
             self._values = self._load_config_file()
-        self._assign_values(self.application, self._values.get('Application'))
-        self._assign_values(self.daemon, self._values.get('Daemon'))
 
-    def _assign_values(self, obj, values):
+        app = self._values.get('Application', self._values.get('application'))
+        self._assign_values(self.application, app)
+        daemon = self._values.get('Daemon', self._values.get('daemon'))
+        self._assign_values(self.daemon, daemon)
+
+    @staticmethod
+    def _assign_values(obj, values):
         """Assign values to the object passed in from the dictionary of values.
 
         :param Data obj: Data object to assign values to
@@ -95,8 +101,10 @@ class Config(object):
 
         """
         config = self.LOGGING
-        config_in = self._values.get('Logging', dict())
-        for section in ['formatters', 'handlers', 'loggers', 'filters', 'root']:
+        config_in = self._values.get('Logging',
+                                     self._values.get('logging', {}))
+        for section in ['formatters', 'handlers', 'loggers',
+                        'filters', 'root']:
             if section in config_in:
                 for key in config_in[section]:
                     config[section][key] = config_in[section][key]
@@ -120,7 +128,6 @@ class Config(object):
             # Only update the configuration if the values differ
             if hash(values) != hash(self._values):
                 self._values = values
-                self._assign_defaults()
                 return True
 
         return False
@@ -130,6 +137,29 @@ class Config(object):
 
         """
         LOGGER.info('Loading configuration from %s', self._file_path)
+        if self._file_path.endswith('json'):
+            return self._load_json_config()
+        # Keep the behavior as it was with regard to file extensions for YAML
+        return self._load_yaml_config()
+
+    def _load_json_config(self):
+        """Load the configuration file in JSON format
+
+        :rtype: dict
+
+        """
+        try:
+            with open(self._file_path, 'r') as handle:
+                return json.load(handle)
+        except (OSError, ValueError) as error:
+            raise ValueError('Could not read configuration file: %s' % error)
+
+    def _load_yaml_config(self):
+        """Loads the configuration file from a .yaml or .yml file
+
+        :type: dict
+
+        """
         try:
             config = open(self._file_path).read()
         except OSError as error:
@@ -141,12 +171,13 @@ class Config(object):
                                  for line in str(error).split('\n')])
             sys.stderr.write("\n\n  Error in the configuration file:\n\n"
                              "%s\n\n" % message)
-            sys.stderr.write("  Configuration should be a valid YAML file.\n\n")
+            sys.stderr.write("  Configuration should be a valid YAML file.\n")
             sys.stderr.write("  YAML format validation available at "
                              "http://yamllint.com\n")
             raise ValueError(error)
 
-    def _validate(self, file_path):
+    @staticmethod
+    def _validate(file_path):
         """Normalize the path provided and ensure the file path, raising a
         ValueError if the file does not exist.
 
@@ -266,7 +297,7 @@ class Data(object):
         object.__delattr__(self, name)
 
     def __delitem__(self, name):
-        if not name in self.__dict__:
+        if name not in self.__dict__:
             raise KeyError(name)
         object.__delattr__(self, name)
 
@@ -290,7 +321,7 @@ class Data(object):
         return repr(self.__dict__)
 
     def __len__(self):
-        return len(self.__dict__.keys())
+        return len(self.__dict__)
 
     def __iter__(self):
         for name in self.__dict__.keys():
@@ -312,7 +343,7 @@ class Data(object):
 
         """
         output = dict()
-        for key, value in self.iteritems():
+        for key, value in self.items():
             if isinstance(value, Data):
                 output[key] = value.dict()
             else:
@@ -348,19 +379,6 @@ class Data(object):
 
         """
         return self.__dict__.items()
-
-    def iteritems(self):
-        """Return an iterator over the data keys. See the note for
-        Data.items().
-
-        Using itervalues() while adding or deleting entries in the data object
-        may raise a RuntimeError or fail to iterate over all entries.
-
-        :rtype: iterator
-        :raises: RuntimeError
-
-        """
-        return self.__dict__.iteritems()
 
     def itervalues(self):
         """Return an iterator over the data values. See the note for
@@ -415,7 +433,7 @@ class Data(object):
         then updated with those key/value pairs: d.update(red=1, blue=2).
 
         :param dict other: Dict or other iterable
-        :param dict **kwargs: Key/value pairs to update
+        :param dict kwargs: Key/value pairs to update
         :rtype: None
 
         """
