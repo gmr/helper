@@ -15,7 +15,7 @@ if float('%s.%s' % (major, minor)) < 2.7:
     tests_require.append('unittest2')
 
 setup(name='helper',
-      version='2.4.1',
+      version='2.4.2',
       classifiers=[
           'Development Status :: 5 - Production/Stable',
           'Environment :: Console',
