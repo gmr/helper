@@ -53,7 +53,7 @@ Creating your first :mod:`helper` application is a fairly straightforward proces
 
 
 
-#. Extend the :meth:`Controller.proccess <helper.Controller.proccess>` method to put your core logic in place.
+#. Extend the :meth:`Controller.process <helper.Controller.process>` method to put your core logic in place.
 
 #. If you want to test your app without installing it, I often make a small script in the project directory, something like myapp/myapp.py that looks like the following::
 
