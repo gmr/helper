@@ -423,7 +423,7 @@ class Data(object):
         :return: mixed
 
         """
-        self.__dict__.setdefault(name, default)
+        return self.__dict__.setdefault(name, default)
 
     def update(self, other=None, **kwargs):
         """Update the dictionary with the key/value pairs from other,
