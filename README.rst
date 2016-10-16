@@ -23,7 +23,7 @@ Dependencies
 
 Documentation
 -------------
-Documentation is available at http://helper.readthedocs.org
+Documentation is available at https://helper.readthedocs.io
 
 Installation
 ------------
