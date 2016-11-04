@@ -1,18 +1,31 @@
 import platform
-try:
-    from setuptools import setup
-except ImportError:
-    from distutils.core import setup
+from setuptools import setup
+import pkg_resources
 
 requirements = ['pyyaml']
 tests_require = ['mock']
+extras_require = {
+    ':python_version == "2.6"': ['argparse', 'logutils'],
+}
 
-# Add Python 2.6 compatibility libraries
-(major, minor, rev) = platform.python_version_tuple()
-if float('%s.%s' % (major, minor)) < 2.7:
-    requirements.append('argparse')
-    requirements.append('logutils')
-    tests_require.append('unittest2')
+try:
+    if 'bdist_wheel' not in sys.argv:
+        for key, value in extras_require.items():
+            if key.startswith(':') and pkg_resources.evaluate_marker(key[1:]):
+                install_requires.extend(value)
+except Exception:
+    logging.getLogger(__name__).exception(
+        'Something went wrong calculating platform specific dependencies, so '
+        "you're getting them all!"
+    )
+    for key, value in extras_require.items():
+        if key.startswith(':'):
+            install_requires.extend(value)
+
+if 'test' in sys.argv:
+    (major, minor, rev) = platform.python_version_tuple()
+    if float('%s.%s' % (major, minor)) < 2.7:
+        tests_require.append('unittest2')
 
 setup(name='helper',
       version='2.4.2',
@@ -51,6 +64,7 @@ setup(name='helper',
       packages=['helper'],
       package_data={'': ['LICENSE', 'README.rst']},
       install_requires=requirements,
+      extras_require=extra_require,
       tests_require=tests_require,
       zip_safe=True,
       entry_points={
