@@ -2,7 +2,7 @@ Helper
 ======
 Helper is a development library for quickly writing configurable applications and daemons.
 
-|Version| |Downloads| |Status| |License|
+|Version| |Downloads| |Status|
 
 Platforms Supported
 -------------------
@@ -63,6 +63,3 @@ History
 
 .. |Downloads| image:: https://img.shields.io/pypi/dm/helper.svg?
    :target: https://pypi.python.org/pypi/helper
-
-.. |License| image:: https://img.shields.io/pypi/l/helper.svg?
-   :target: https://helper.readthedocs.org
