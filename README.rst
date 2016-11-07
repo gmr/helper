@@ -33,10 +33,10 @@ package.
 
 History
 -------
-- 2.4.2 2015-11-04
+- 2.4.2 - 2016-11-07
    - Allow for 'root' section in logging config
    - Import reduce from functools to suport Python 3
-- 2.4.1 2013-03-14
+- 2.4.1 - 2013-03-14
    - Fix fchmod literal call in Python 3
 - 2.4.0
    - Better startup exception reporting, improved pidfile ownership
