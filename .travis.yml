@@ -22,4 +22,4 @@ deploy:
     tags: true
     all_branches: true
   password:
-    secure: "QNndN99rD5boB/Sg3I0CzjkFUF1JmGrsQKZ7ONiA+obUWQDqOmggUoPEs1zN8xIExDcM4tPhlCQX0QiYJrKdLQwWiClvKo1wpYUxVm0s/W8SqvhV3IK9VxhMrbZUkmksO48TH4YKav06rEkVxke9g3U92XUJZ6cRAnYUKrjMYaQ="
+    secure: "Bh+9GSuZz4IemxdPvwHMDhpuQSTEBwYKESWq5Olk/U+Dvennak038atF5I8XQ/hajxuImpXyBK8rqJDmsdtRr0vik+9wtWrbljK3iUvDJ9OXE7OC8Qxm0HH6hD6pXRae6Qn4bONqqqWuV4NOaPnh2lNHpWJdUZutGdS3r6JREmw="
