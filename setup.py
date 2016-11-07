@@ -1,12 +1,15 @@
+import logging
 import platform
 from setuptools import setup
 import pkg_resources
+import sys
 
 requirements = ['pyyaml']
 tests_require = ['mock']
 extras_require = {
     ':python_version == "2.6"': ['argparse', 'logutils'],
 }
+install_requires = []
 
 try:
     if 'bdist_wheel' not in sys.argv:
@@ -48,8 +51,10 @@ setup(name='helper',
           'Programming Language :: Python :: 2.6',
           'Programming Language :: Python :: 2.7',
           'Programming Language :: Python :: 3',
-          'Programming Language :: Python :: 3.2',
           'Programming Language :: Python :: 3.3',
+          'Programming Language :: Python :: 3.4',
+          'Programming Language :: Python :: 3.5',
+          'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: Implementation :: CPython',
           'Programming Language :: Python :: Implementation :: PyPy',
           'Topic :: Software Development :: Libraries',
@@ -57,14 +62,14 @@ setup(name='helper',
       description=('Development library for quickly writing configurable '
                    'applications and daemons'),
       long_description=open('README.rst').read(),
-      license=open('LICENSE').read(),
+      license='BSD',
       author='Gavin M. Roy',
       author_email='gavinmroy@gmail.com',
-      url='https://helper.readthedocs.io',
+      url='https://github.com/gmr/helper',
       packages=['helper'],
       package_data={'': ['LICENSE', 'README.rst']},
       install_requires=requirements,
-      extras_require=extra_require,
+      extras_require=extras_require,
       tests_require=tests_require,
       zip_safe=True,
       entry_points={
