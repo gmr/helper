@@ -65,12 +65,18 @@ class Config(object):
         self._values = Data()
         if file_path:
             self._file_path = self._validate(file_path)
-            self._values = self._load_config_file()
+            self._values = Data(self._load_config_file())
+            self.apply_config('application')
+            self.apply_config('daemon')
 
-        app = self._values.get('Application', self._values.get('application'))
-        self._assign_values(self.application, app)
-        daemon = self._values.get('Daemon', self._values.get('daemon'))
-        self._assign_values(self.daemon, daemon)
+    def apply_config(self, name):
+        """Apply raw loaded config to running config.  This starts with the base
+        config, applies any defined config changes to it, then swaps it in.
+        """
+        base = Data(getattr(self, name.upper()))
+        updates = self._values.get(name.capitalize(), self._values.get(name))
+        self._assign_values(base, updates)
+        setattr(self, name, base)
 
     @staticmethod
     def _assign_values(obj, values):
@@ -126,7 +132,7 @@ class Config(object):
                 return False
 
             # Only update the configuration if the values differ
-            if hash(values) != hash(self._values):
+            if values != self._values:
                 self._values = values
                 return True
 
@@ -229,7 +235,7 @@ class LoggingConfig(object):
 
         """
 
-        if hash(self.config) != hash(configuration) and debug != self.debug:
+        if self.config != configuration and debug != self.debug:
             self.config = configuration
             self.debug = debug
             self.configure()
@@ -281,6 +287,8 @@ class Data(object):
     attributes or as a dict.
 
     """
+    __hash__ = False
+
     def __init__(self, value=None):
         super(Data, self).__init__()
         if value and isinstance(value, dict):
@@ -326,6 +334,14 @@ class Data(object):
     def __iter__(self):
         for name in self.__dict__.keys():
             yield name
+
+    def __eq__(self, other):
+        if isinstance(other, Data):
+            return self.dict() == other.dict()
+        return self.dict() == other
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def str(self):
         """Return a string representation of the data object.
