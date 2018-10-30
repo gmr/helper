@@ -3,14 +3,19 @@ Helper Controller Class
 
 """
 import logging
+import logging.config
 import os
+import multiprocessing
 import platform
+try:
+    import queue
+except ImportError:
+    import Queue as queue
 import signal
 import sys
 import time
 
-from helper import config
-from helper import __version__
+from helper import config, __version__
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,7 +68,8 @@ class Controller(object):
     STATE_STOPPED = 0x07
 
     # For reverse lookup
-    _STATES = {0x01: 'Initializing',
+    _STATES = {0x00: 'None',
+               0x01: 'Initializing',
                0x02: 'Sleeping',
                0x03: 'Idle',
                0x04: 'Active',
@@ -72,7 +78,7 @@ class Controller(object):
                0x07: 'Stopped'}
 
     # Default state
-    _state = None
+    _state = 0x00
 
     def __init__(self, args, operating_system):
         """Create an instance of the controller passing in the debug flag,
@@ -84,23 +90,14 @@ class Controller(object):
         """
         self.set_state(self.STATE_INITIALIZING)
         self.args = args
-        self.debug = args.foreground
         try:
             self.config = config.Config(args.config)
         except ValueError:
             sys.exit(1)
-        self.logging_config = config.LoggingConfig(self.config.logging,
-                                                   self.debug)
+        self.debug = args.foreground
+        logging.config.dictConfig(self.config.logging)
         self.operating_system = operating_system
-
-    def cleanup(self):
-        """Override this method to cleanly shutdown the application."""
-        LOGGER.debug('Unextended %s.cleanup() method', self.__class__.__name__)
-
-    def configuration_reloaded(self):
-        """Override to provide any steps when the configuration is reloaded."""
-        LOGGER.debug('Unextended %s.configuration_reloaded() method',
-                     self.__class__.__name__)
+        self.pending_signals = multiprocessing.Queue()
 
     @property
     def current_state(self):
@@ -195,43 +192,28 @@ class Controller(object):
         """
         return self._state == self.STATE_STOP_REQUESTED
 
-    def on_sighup(self, signum_unused, frame_unused):
-        """Called when SIGHUP is received, shutdown internal runtime state,
-        reloads configuration and then calls Controller.run(). Can be extended
-        to implement other behaviors.
+    def on_configuration_reloaded(self):
+        """Override to provide any steps when the configuration is reloaded."""
+        LOGGER.debug('%s.on_configuration_reloaded() NotImplemented',
+                     self.__class__.__name__)
 
-        """
-        LOGGER.info('Received SIGHUP')
-        if self.config.reload():
-            LOGGER.info('Configuration reloaded')
-            if self.logging_config.update(self.config.logging, self.debug):
-                LOGGER.info('Logging configuration updated')
-            self.configuration_reloaded()
+    def on_shutdown(self):
+        """Override this method to cleanly shutdown the application."""
+        LOGGER.debug('%s.cleanup() NotImplemented', self.__class__.__name__)
 
-        if self.is_sleeping:
-            signal.pause()
-
-    def on_sigterm(self, signum_unused, frame_unused):
-        """Called when SIGTERM is received, calling self.stop(). Override to
-        implement a different behavior.
-
-        """
-        LOGGER.info('Received SIGTERM, initiating shutdown')
-        self.stop()
-
-    def on_sigusr1(self, signum_unused, frame_unused):
+    def on_sigusr1(self):
         """Called when SIGUSR1 is received, does not have any attached
         behavior. Override to implement a behavior for this signal.
 
         """
-        LOGGER.info('Received SIGUSR1')
+        LOGGER.debug('%s.on_sigusr1() NotImplemented', self.__class__.__name__)
 
-    def on_sigusr2(self, signum_unused, frame_unused):
+    def on_sigusr2(self):
         """Called when SIGUSR2 is received, does not have any attached
         behavior. Override to implement a behavior for this signal.
 
         """
-        LOGGER.info('Received SIGUSR2')
+        LOGGER.debug('%s.on_sigusr2() NotImplemented', self.__class__.__name__)
 
     def process(self):
         """To be implemented by the extending class. Is called after every
@@ -239,6 +221,26 @@ class Controller(object):
 
         """
         raise NotImplementedError
+
+    def process_signal(self, signum):
+        """Invoked whenever a signal is added to the stack.
+
+        :param int signum: The signal that was added
+
+        """
+        if signum == signal.SIGTERM:
+            LOGGER.info('Received SIGTERM, initiating shutdown')
+            self.stop()
+        elif signum == signal.SIGHUP:
+            LOGGER.info('Received SIGHUP')
+            if self.config.reload():
+                LOGGER.info('Configuration reloaded')
+                logging.config.dictConfig(self.config.logging)
+                self.on_configuration_reloaded()
+        elif signum == signal.SIGUSR1:
+            self.on_sigusr1()
+        elif signum == signal.SIGUSR2:
+            self.on_sigusr2()
 
     def run(self):
         """The core method for starting the application. Will setup logging,
@@ -250,11 +252,18 @@ class Controller(object):
         """
         LOGGER.info('%s v%s started', self.APPNAME, self.VERSION)
         self.setup()
-        self.process()
-        signal.signal(signal.SIGALRM, self._wake)
-        self._sleep()
-        while self.is_running or self.is_sleeping:
-            signal.pause()
+        while not any([self.is_stopping, self.is_stopped]):
+            self.set_state(self.STATE_SLEEPING)
+            try:
+                signum = self.pending_signals.get(True, self.wake_interval)
+            except queue.Empty:
+                pass
+            else:
+                self.process_signal(signum)
+                if any([self.is_stopping, self.is_stopped]):
+                    break
+            self.set_state(self.STATE_ACTIVE)
+            self.process()
 
     def start(self):
         """Important:
@@ -262,7 +271,9 @@ class Controller(object):
             Do not extend this method, rather redefine Controller.run
 
         """
-        self.setup_signals()
+        for signum in [signal.SIGHUP, signal.SIGTERM,
+                       signal.SIGUSR1, signal.SIGUSR2]:
+            signal.signal(signum, self._on_signal)
         self.run()
 
     def set_state(self, state):
@@ -281,15 +292,12 @@ class Controller(object):
         :raises: ValueError
 
         """
-        LOGGER.debug('Attempting to set state to %s', self._STATES.get(state,
-                                                                       state))
         if state == self._state:
-            LOGGER.debug('Ignoring request to set state to current state: %s',
-                         self._STATES[state])
             return
+        elif state not in self._STATES.keys():
+            raise ValueError('Invalid state {}'.format(state))
 
-        if state not in self._STATES.keys():
-            raise ValueError('Invalid Runtime State')
+        # Check for invalid transitions
 
         if self.is_waiting_to_stop and state not in [self.STATE_STOPPING,
                                                      self.STATE_STOPPED]:
@@ -297,58 +305,44 @@ class Controller(object):
                            'shutdown: %s ', self._STATES[state])
             return
 
-        # Validate the next state for a shutting down process
-        if self.is_stopping and state != self.STATE_STOPPED:
+        elif self.is_stopping and state != self.STATE_STOPPED:
             LOGGER.warning('Attempt to set invalid post shutdown state: %s',
                            self._STATES[state])
             return
 
-        # Validate the next state for a running process
-        if self.is_running and state not in [self.STATE_ACTIVE,
-                                             self.STATE_IDLE,
-                                             self.STATE_SLEEPING,
-                                             self.STATE_STOP_REQUESTED,
-                                             self.STATE_STOPPING]:
+        elif self.is_running and state not in [self.STATE_ACTIVE,
+                                               self.STATE_IDLE,
+                                               self.STATE_SLEEPING,
+                                               self.STATE_STOP_REQUESTED,
+                                               self.STATE_STOPPING]:
             LOGGER.warning('Attempt to set invalid post running state: %s',
                            self._STATES[state])
             return
 
-        # Validate the next state for a sleeping process
-        if self.is_sleeping and state not in [self.STATE_ACTIVE,
-                                              self.STATE_IDLE,
-                                              self.STATE_STOP_REQUESTED,
-                                              self.STATE_STOPPING]:
+        elif self.is_sleeping and state not in [self.STATE_ACTIVE,
+                                                self.STATE_IDLE,
+                                                self.STATE_STOP_REQUESTED,
+                                                self.STATE_STOPPING]:
             LOGGER.warning('Attempt to set invalid post sleeping state: %s',
                            self._STATES[state])
             return
 
-        # Set the value
+        LOGGER.debug('State changed from %s to %s',
+                     self._STATES[self._state], self._STATES[state])
         self._state = state
-
-        # Log the change
-        LOGGER.debug('Runtime state changed to %s', self._STATES[self._state])
 
     def setup(self):
         """Override to provide any required setup steps."""
-        LOGGER.debug('Unextended %s.setup() method', self.__class__.__name__)
-
-    def setup_signals(self):
-        signal.signal(signal.SIGHUP, self.on_sighup)
-        signal.signal(signal.SIGTERM, self.on_sigterm)
-        signal.signal(signal.SIGUSR1, self.on_sigusr1)
-        signal.signal(signal.SIGUSR2, self.on_sigusr2)
+        LOGGER.debug('%s.setup() NotImplemented', self.__class__.__name__)
 
     def shutdown(self):
         """Override to provide any required shutdown steps."""
-        LOGGER.debug('Unextended %s.shutdown() method', self.__class__.__name__)
+        LOGGER.debug('%s.shutdown() NotImplemented', self.__class__.__name__)
 
     def stop(self):
         """Override to implement shutdown steps."""
         LOGGER.info('Attempting to stop the process')
         self.set_state(self.STATE_STOP_REQUESTED)
-
-        # Clear out the timer
-        signal.setitimer(signal.ITIMER_PROF, 0, 0)
 
         # Call shutdown for classes to add shutdown steps
         self.shutdown()
@@ -363,10 +357,10 @@ class Controller(object):
             self.set_state(self.STATE_STOPPING)
 
         # Call a method that may be overwritten to cleanly shutdown
-        self.cleanup()
+        self.on_shutdown()
 
         # Change our state
-        self._stopped()
+        self.set_state(self.STATE_STOPPED)
 
     @property
     def system_platform(self):
@@ -390,48 +384,6 @@ class Controller(object):
         return (self.config.application.get('wake_interval') or
                 self.WAKE_INTERVAL)
 
-    def _sleep(self):
-        """Setup the next alarm to fire and then wait for it to fire."""
-        # Make sure that the application is not shutting down before sleeping
-        if self.is_stopping:
-            LOGGER.debug('Not sleeping, application is trying to shutdown')
-            return
-
-        # Set the signal timer
-        signal.setitimer(signal.ITIMER_REAL, self.wake_interval, 0)
-
-        # Toggle that we are running
-        self.set_state(self.STATE_SLEEPING)
-
-    def _stopped(self):
-        """Sets the state back to idle when shutdown steps are complete."""
-        LOGGER.debug('Application stopped')
-        self.set_state(self.STATE_STOPPED)
-
-    def _wake(self, _signal, _frame):
-        """Fired every time the alarm is signaled. If the app is not shutting
-        or shutdown, it will attempt to process.
-
-        :param int _signal: The signal number
-        :param frame _frame: The stack frame when received
-
-        """
-        LOGGER.debug('Application woke up')
-
-        # Only run the code path if it's not shutting down or shutdown
-        if not any([self.is_stopping, self.is_stopped, self.is_idle]):
-
-            # Note that we're running
-            self.set_state(self.STATE_ACTIVE)
-
-            # Process actions for the application
-            self.process()
-
-            # Exit out if the app is waiting to stop
-            if self.is_waiting_to_stop:
-                return self.set_state(self.STATE_STOPPING)
-
-            # Wait until the process is to be woken again
-            self._sleep()
-        else:
-            LOGGER.info('Exiting wake interval without sleeping again')
+    def _on_signal(self, signum, _frame):
+        """Append the signal to the queue, to be processed by the main."""
+        self.pending_signals.put(signum)
