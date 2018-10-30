@@ -35,7 +35,7 @@ jobs:
   - python: pypy
   - python: pypy3
   - stage: upload coverage
-    if: repo IS gmr/rejected
+    if: repo = gmr/helper
     python: 3.6
     services: []
     install:
@@ -50,7 +50,7 @@ jobs:
       - coverage report
     after_success: codecov
   - stage: deploy
-    if: repo IS gmr/rejected
+    if: repo = gmr/helper
     python: 3.6
     install: true
     services: []
