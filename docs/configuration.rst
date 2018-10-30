@@ -71,3 +71,36 @@ If the value is set to true and the application is not running in the foreground
 Troubleshooting
 ^^^^^^^^^^^^^^^
 If you find that your application is not logging anything or sending output to the terminal, ensure that you have created a logger section in your configuration for your controller. For example if your Controller instance is named MyController, make sure there is a MyController logger in the logging configuration.
+
+Example
+^^^^^^^
+The following example demonstrates minimal configuration for a helper based application:
+
+.. code:: yaml
+
+    Application:
+      wake_interval: 10
+
+    Daemon:
+      user: www-data
+      group: daemon
+      pidfile: /var/run/my-app.pid
+
+    Logging:
+        version: 1
+        formatters: []
+        verbose:
+          format: '%(levelname) -10s %(asctime)s %(process)-6d %(processName) -15s %(name) -10s %(funcName) -20s: %(message)s'
+          datefmt: '%Y-%m-%d %H:%M:%S'
+        handlers:
+          console:
+            class: logging.StreamHandler
+            formatter: verbose
+            debug_only: True
+        loggers:
+          helper:
+            handlers: [console]
+            level: INFO
+            propagate: true
+        disable_existing_loggers: true
+        incremental: false

@@ -129,46 +129,33 @@
 $I:.:+I=................ .......... ........................................=:
  :8=+.,?$:.......................................  .... .............    ..,,= .
 """
-__version__ = '2.4.2'
-version = __version__
-
-# Add NullHandler to prevent logging warnings
 import logging
-try:
-    # not available in python 2.6
-    from logging import NullHandler
-except ImportError:
-    class NullHandler(logging.Handler):
-        def emit(self, record):
-            pass
-
-logging.getLogger().addHandler(NullHandler())
-
-# Import the Controller for extending
-from helper.controller import Controller
-
-# Conditionally import the OS platform support
 import sys
+
+from helper import config, parser
+
 if sys.platform == 'win32':
     from helper import windows as platform
 else:
     from helper import unix as platform
 
+__version__ = '3.0.0'
+version = __version__
 
-# Import config and parser for start
-from helper import config
-from helper import parser
+# Add NullHandler to prevent logging warnings
+logging.getLogger().addHandler(logging.NullHandler())
 
 
-def start(ctrl):
+def start(controller_class):
     """Start the Helper controller either in the foreground or as a daemon
     process.
 
-    :param ctrl helper.Controller: The controller class handle to create and run
+    :param controller_class: The controller class handle to create and run
+    :type controller_class: callable
 
     """
     args = parser.parse()
-    obj = ctrl(args, platform.operating_system())
+    obj = controller_class(args, platform.operating_system())
     if args.foreground:
         try:
             obj.start()
@@ -182,6 +169,3 @@ def start(ctrl):
             sys.stderr.write('\nError starting %s: %s\n\n' %
                              (sys.argv[0], error))
             sys.exit(1)
-
-if __name__ == '__main__':
-    start(Controller)

@@ -1,0 +1,2 @@
+flatdict>=3.1.0,<4
+pyyaml

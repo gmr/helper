@@ -1,0 +1,29 @@
+Application:
+  wake_interval: 10
+  example: test-value
+
+Daemon:
+  user: rejected
+  group: daemon
+  pidfile: /var/run/example.pid
+
+Logging:
+  formatters:
+    verbose:
+      format: '%(levelname) -10s %(asctime)s %(process)-6d %(name) -20s %(funcName) -20s: %(message)s'
+      datefmt: '%Y-%m-%d %H:%M:%S'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: verbose
+  loggers:
+    example:
+      handlers: [console]
+      level: INFO
+      propagate: true
+    helper:
+      handlers: [console]
+      level: DEBUG
+      propagate: true
+  disable_existing_loggers: true
+  incremental: false
