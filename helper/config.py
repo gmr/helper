@@ -6,12 +6,16 @@ format and providing sane defaults for parts that don't have any.
 import json
 import logging
 import logging.config
+import os
 from os import path
 import sys
+try:
+    from urllib import parse
+except ImportError:  # Python 2.7 support
+    import urlparse as parse
 
 import flatdict
 import yaml
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -68,11 +72,8 @@ class Config(object):
         :raises: ValueError
 
         """
-        self._file_path = path.abspath(file_path) if file_path else None
-        if self._file_path and not path.exists(self._file_path):
-            raise ValueError('Configuration file not found: %s' % file_path)
-
         self._values = self._default_configuration()
+        self._file_path = self._normalize_file_path(file_path)
         if self._file_path:
             self._values.update(self._load_config_file())
 
@@ -146,10 +147,10 @@ class Config(object):
 
         """
         try:
-            with open(self._file_path, 'r') as handle:
-                return json.load(handle)
-        except (OSError, ValueError) as error:
-            raise ValueError('Could not read configuration file: %s' % error)
+            return json.loads(self._read_config())
+        except ValueError as error:
+            raise ValueError(
+                'Could not read configuration file: {}'.format(error))
 
     def _load_yaml_config(self):
         """Loads the configuration file from a .yaml or .yml file
@@ -158,7 +159,7 @@ class Config(object):
 
         """
         try:
-            config = open(self._file_path).read()
+            config = self._read_config()
         except OSError as error:
             raise ValueError('Could not read configuration file: %s' % error)
         try:
@@ -172,6 +173,90 @@ class Config(object):
             sys.stderr.write('  YAML format validation available at '
                              'http://yamllint.com\n')
             raise ValueError(error)
+
+    @staticmethod
+    def _normalize_file_path(file_path):
+        """Normalize the file path value.
+
+        :param str file_path: The file path as passed in
+        :rtype: str
+
+        """
+        if not file_path:
+            return None
+        elif file_path.startswith('s3://') or \
+                file_path.startswith('http://') or \
+                file_path.startswith('https://'):
+            return file_path
+        return path.abspath(file_path)
+
+    def _read_config(self):
+        """Read the configuration from the various places it may be read from.
+
+        :rtype: str
+        :raises: ValueError
+
+        """
+        if not self._file_path:
+            return None
+        elif self._file_path.startswith('s3://'):
+            return self._read_s3_config()
+        elif self._file_path.startswith('http://') or \
+                self._file_path.startswith('https://'):
+            return self._read_remote_config()
+        elif not path.exists(self._file_path):
+            raise ValueError(
+                'Configuration file not found: {}'.format(self._file_path))
+
+        with open(self._file_path, 'r') as handle:
+            return handle.read()
+
+    def _read_remote_config(self):
+        """Read a remote config via URL.
+
+        :rtype: str
+        :raises: ValueError
+
+        """
+        try:
+            import requests
+        except ImportError:
+            requests = None
+        if not requests:
+            raise ValueError(
+                'Remote config URL specified but requests not installed')
+        result = requests.get(self._file_path)
+        if not result.ok:
+            raise ValueError(
+                'Failed to retrieve remote config: {}'.format(
+                    result.status_code))
+        return result.text
+
+    def _read_s3_config(self):
+        """Read in the value of the configuration file in Amazon S3.
+
+        :rtype: str
+        :raises: ValueError
+
+        """
+        try:
+            import boto3
+            import botocore.exceptions
+        except ImportError:
+            boto3, botocore = None, None
+
+        if not boto3:
+            raise ValueError(
+                's3 URL specified for configuration but boto3 not installed')
+        parsed = parse.urlparse(self._file_path)
+        try:
+            response = boto3.client(
+                's3', endpoint_url=os.environ.get('S3_ENDPOINT')).get_object(
+                    Bucket=parsed.netloc, Key=parsed.path.lstrip('/'))
+        except botocore.exceptions.ClientError as e:
+            raise ValueError(
+                'Failed to download configuration from S3: {}'.format(e))
+        return response['Body'].read().decode('utf-8')
 
 
 class LoggingConfig(object):

@@ -63,4 +63,9 @@ setuptools.setup(
     zip_safe=True,
     entry_points={
         'distutils.commands': ['run_helper = helper.setupext:RunCommand']
-    })
+    },
+    extras_require={
+        'consul': ['requests'],
+        'html': ['boto3'],
+    }
+)
