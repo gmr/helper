@@ -58,8 +58,8 @@ setuptools.setup(
     url='https://github.com/gmr/helper',
     packages=['helper'],
     package_data={'': ['LICENSE', 'README.rst']},
-    install_requires=read_requirements('requires/installation.txt'),
-    tests_require=read_requirements('requires/testing.txt'),
+    install_requires=read_requirements('installation.txt'),
+    tests_require=read_requirements('testing.txt'),
     zip_safe=True,
     entry_points={
         'distutils.commands': ['run_helper = helper.setupext:RunCommand']
