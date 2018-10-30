@@ -6,25 +6,22 @@ Creating your first :mod:`helper` application is a fairly straightforward proces
 
     pip install helper
 
-#. Create a new application with the `new-helper` script which will create a stub project including the package directory, configuration file, init.d script for RHEL systems, and setup.py file::
-
-    new-helper -p myapp
-
-#. Open the controller.py file in myapp/myapp/ and you should have a file that looks similar to the following::
-
-    """myapp
-
-    Helper boilerplate project
+#. Create a helper controller:
 
     """
-    import helper
+    Helper Example
+    ==============
+
+    """
     import logging
-    from helper import parser
+
+    import helper
+    from helper import controller, parser
 
     DESCRIPTION = 'Project Description'
     LOGGER = logging.getLogger(__name__)
 
-    class Controller(helper.Controller):
+    class Controller(controller.Controller):
         """The core application controller which is created by invoking
         helper.run().
 
@@ -52,19 +49,12 @@ Creating your first :mod:`helper` application is a fairly straightforward proces
         helper.start(Controller)
 
 
-
-#. Extend the :meth:`Controller.process <helper.Controller.process>` method to put your core logic in place.
-
-#. If you want to test your app without installing it, I often make a small script in the project directory, something like myapp/myapp.py that looks like the following::
-
-    #!/usr/bin/env
-    from myapp import controller
-    controller.main()
-
-#. Change the mode of the file to u+x and run it::
-
-    chmod u+x myapp.py
-    ./myapp.py -c etc/myapp.yml -f
+    if __name__ == '__main__':
+        main()
 
 
-That's about all there is to it. If you don't want to use the sleep/wake/process pattern but want to use an IOLoop, instead of extending :meth:`Controller.process <helper.Controller.process>`, extend :meth:`Controller.run <helper.Controller.run>`.
+#. Extend the :meth:`Controller.process <helper.controller.Controller.process>` method to put your core logic in place.
+
+That's about all there is to it. If you don't want to use the sleep/wake/process pattern but want to use an IOLoop,
+instead of extending :meth:`Controller.process <helper.controller.Controller.process>`,
+extend :meth:`Controller.run <helper.controller.Controller.run>`.

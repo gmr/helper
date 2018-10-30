@@ -1,5 +1,10 @@
 Version History
 ===============
+- 3.0.0 - 2018-03-14
+   - Drop support for Python 2.6, 3.2, 3.3
+   - Clean up signal handling to append signals to a queue to prevent signal handler locking issues
+   - REMOVED `helper.Controller` alias for `helper.controller.Controller`
+
 - 2.4.2 - 2015-11-04 - Allow for 'root' section in logging config
         - Import reduce from functools to suport Python 3
 - 2.4.1 - 2013-03-14 - Fix fchmod literal call in Python 3

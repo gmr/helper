@@ -5,21 +5,53 @@ format and providing sane defaults for parts that don't have any.
 """
 import json
 import logging
+import logging.config
 from os import path
-import platform
 import sys
+
+import flatdict
 import yaml
-
-from helper import NullHandler
-
-(major, minor, rev) = platform.python_version_tuple()
-if float('%s.%s' % (major, minor)) < 2.7:
-    import logutils.dictconfig as logging_config
-else:
-    from logging import config as logging_config
 
 
 LOGGER = logging.getLogger(__name__)
+
+APPLICATION = {'wake_interval': 60}
+
+DAEMON = {'user': None,
+          'group': None,
+          'pidfile': None,
+          'prevent_core': True}
+
+LOGGING_FORMAT = ('%(levelname) -10s %(asctime)s %(process)-6d '
+                  '%(processName) -20s %(threadName)-12s %(name) -30s '
+                  '%(funcName) -25s L%(lineno)-6d: %(message)s')
+
+LOGGING = {
+    'disable_existing_loggers': True,
+    'filters': {},
+    'formatters': {
+        'verbose': {
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+            'format': LOGGING_FORMAT
+        }
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+        'root': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+            'level': logging.CRITICAL
+        }
+    },
+    'incremental': False,
+    'loggers': {},
+    'root': {
+        'handlers': ['root']
+    },
+    'version': 1}
 
 
 class Config(object):
@@ -28,66 +60,21 @@ class Config(object):
     defaults with very basic behavior for logging and daemonization.
 
     """
-    APPLICATION = {'wake_interval': 60}
-    DAEMON = {'user': None,
-              'group': None,
-              'pidfile': None,
-              'prevent_core': True}
-    LOGGING_FORMAT = ('%(levelname) -10s %(asctime)s %(process)-6d '
-                      '%(processName) -20s %(threadName)-12s %(name) -30s '
-                      '%(funcName) -25s L%(lineno)-6d: %(message)s')
-    LOGGING = {'disable_existing_loggers': True,
-               'filters': dict(),
-               'formatters': {'verbose': {'datefmt': '%Y-%m-%d %H:%M:%S',
-                                          'format': LOGGING_FORMAT}},
-               'handlers': {'console': {'class': 'logging.StreamHandler',
-                                        'debug_only': True,
-                                        'formatter': 'verbose'}},
-               'incremental': False,
-               'loggers': {'helper': {'handlers': ['console'],
-                                      'level': 'INFO',
-                                      'propagate': True}},
-               'root': {'handlers': [],
-                        'level': logging.CRITICAL,
-                        'propagate': True},
-               'version': 1}
-
     def __init__(self, file_path=None):
         """Create a new instance of the configuration object, passing in the
         path to the configuration file.
 
-        :param str file_path:
+        :param str file_path: The path to the configuration file
+        :raises: ValueError
 
         """
-        self.application = Data(self.APPLICATION)
-        self.daemon = Data(self.DAEMON)
-        self._file_path = None
-        self._values = Data()
-        if file_path:
-            self._file_path = self._validate(file_path)
-            self._values = Data(self._load_config_file())
-            self.apply_config('application')
-            self.apply_config('daemon')
+        self._file_path = path.abspath(file_path) if file_path else None
+        if self._file_path and not path.exists(self._file_path):
+            raise ValueError('Configuration file not found: %s' % file_path)
 
-    def apply_config(self, name):
-        """Apply raw loaded config to running config.  This starts with the base
-        config, applies any defined config changes to it, then swaps it in.
-        """
-        base = Data(getattr(self, name.upper()))
-        updates = self._values.get(name.capitalize(), self._values.get(name))
-        self._assign_values(base, updates)
-        setattr(self, name, base)
-
-    @staticmethod
-    def _assign_values(obj, values):
-        """Assign values to the object passed in from the dictionary of values.
-
-        :param Data obj: Data object to assign values to
-        :param dict values: Values to assign
-
-        """
-        for key in values or dict():
-            setattr(obj, key, values[key])
+        self._values = self._default_configuration()
+        if self._file_path:
+            self._values.update(self._load_config_file())
 
     def get(self, name, default=None):
         """Return the value for key if key is in the configuration, else default.
@@ -100,43 +87,42 @@ class Config(object):
         return self._values.get(name, default)
 
     @property
+    def application(self):
+        return self._values['Application'].as_dict()
+
+    @property
+    def daemon(self):
+        return self._values['Daemon'].as_dict()
+
+    @property
     def logging(self):
-        """Return the logging configuration in the form of a dictionary.
-
-        :rtype: dict
-
-        """
-        config = self.LOGGING
-        config_in = self._values.get('Logging',
-                                     self._values.get('logging', {}))
-        for section in ['formatters', 'handlers', 'loggers',
-                        'filters', 'root']:
-            if section in config_in:
-                for key in config_in[section]:
-                    config[section][key] = config_in[section][key]
-        LOGGER.debug(config)
-        return config
+        return self._values['Logging'].as_dict()
 
     def reload(self):
         """Reload the configuration from disk returning True if the
         configuration has changed from the previous values.
 
         """
+        config = self._default_configuration()
         if self._file_path:
-
-            # Try and reload the configuration file from disk
-            try:
-                values = Data(self._load_config_file())
-            except ValueError as error:
-                LOGGER.error('Could not reload configuration: %s', error)
-                return False
-
-            # Only update the configuration if the values differ
-            if values != self._values:
-                self._values = values
-                return True
-
+            config.update(self._load_config_file())
+        if config != self._values:
+            self._values = config
+            return True
         return False
+
+    @staticmethod
+    def _default_configuration():
+        """Return the default configuration for Helper
+
+        :rtype: dict
+
+        """
+        return flatdict.FlatDict({
+            'Application': APPLICATION,
+            'Daemon': DAEMON,
+            'Logging': LOGGING
+        })
 
     def _load_config_file(self):
         """Load the configuration file into memory, returning the content.
@@ -144,9 +130,14 @@ class Config(object):
         """
         LOGGER.info('Loading configuration from %s', self._file_path)
         if self._file_path.endswith('json'):
-            return self._load_json_config()
-        # Keep the behavior as it was with regard to file extensions for YAML
-        return self._load_yaml_config()
+            config = self._load_json_config()
+        else:
+            config = self._load_yaml_config()
+        for key, value in [(k, v) for k, v in config.items()]:
+            if key.title() != key:
+                config[key.title()] = value
+                del config[key]
+        return flatdict.FlatDict(config)
 
     def _load_json_config(self):
         """Load the configuration file in JSON format
@@ -175,27 +166,12 @@ class Config(object):
         except yaml.YAMLError as error:
             message = '\n'.join(['    > %s' % line
                                  for line in str(error).split('\n')])
-            sys.stderr.write("\n\n  Error in the configuration file:\n\n"
-                             "%s\n\n" % message)
-            sys.stderr.write("  Configuration should be a valid YAML file.\n")
-            sys.stderr.write("  YAML format validation available at "
-                             "http://yamllint.com\n")
+            sys.stderr.write('\n\n  Error in the configuration file:\n\n'
+                             '{}\n\n'.format(message))
+            sys.stderr.write('  Configuration should be a valid YAML file.\n')
+            sys.stderr.write('  YAML format validation available at '
+                             'http://yamllint.com\n')
             raise ValueError(error)
-
-    @staticmethod
-    def _validate(file_path):
-        """Normalize the path provided and ensure the file path, raising a
-        ValueError if the file does not exist.
-
-        :param str file_path:
-        :return: str
-        :raises: ValueError
-
-        """
-        file_path = path.abspath(file_path)
-        if not path.exists(file_path):
-            raise ValueError('Configuration file not found: %s' % file_path)
-        return file_path
 
 
 class LoggingConfig(object):
@@ -218,9 +194,9 @@ class LoggingConfig(object):
         """
         # Force a NullLogger for some libraries that require it
         root_logger = logging.getLogger()
-        root_logger.addHandler(NullHandler())
+        root_logger.addHandler(logging.NullHandler())
 
-        self.config = configuration
+        self.config = dict(configuration)
         self.debug = debug
         self.configure()
 
@@ -234,9 +210,8 @@ class LoggingConfig(object):
         :rtype: bool
 
         """
-
-        if self.config != configuration and debug != self.debug:
-            self.config = configuration
+        if self.config != dict(configuration) and debug != self.debug:
+            self.config = dict(configuration)
             self.debug = debug
             self.configure()
             return True
@@ -247,21 +222,11 @@ class LoggingConfig(object):
         if self.debug is not None and not self.debug:
             self._remove_debug_handlers()
         self._remove_debug_only()
-        logging_config.dictConfig(self.config)
+        logging.config.dictConfig(self.config)
         try:
             logging.captureWarnings(True)
         except AttributeError:
             pass
-
-    def _remove_debug_only(self):
-        """Iterate through each handler removing the invalid dictConfig key of
-        debug_only.
-
-        """
-        LOGGER.debug('Removing debug only from handlers')
-        for handler in self.config[self.HANDLERS]:
-            if self.DEBUG_ONLY in self.config[self.HANDLERS][handler]:
-                del self.config[self.HANDLERS][handler][self.DEBUG_ONLY]
 
     def _remove_debug_handlers(self):
         """Remove any handlers with an attribute of debug_only that is True and
@@ -281,184 +246,12 @@ class LoggingConfig(object):
                     logger[self.HANDLERS].remove(handler)
         self._remove_debug_only()
 
-
-class Data(object):
-    """Data object configuration is wrapped in, can be used as a object with
-    attributes or as a dict.
-
-    """
-    __hash__ = False
-
-    def __init__(self, value=None):
-        super(Data, self).__init__()
-        if value and isinstance(value, dict):
-            for name in value.keys():
-                if isinstance(value[name], dict):
-                    object.__setattr__(self, name, Data(value[name]))
-                else:
-                    object.__setattr__(self, name, value[name])
-
-    def __contains__(self, name):
-        return name in self.__dict__.keys()
-
-    def __delattr__(self, name):
-        object.__delattr__(self, name)
-
-    def __delitem__(self, name):
-        if name not in self.__dict__:
-            raise KeyError(name)
-        object.__delattr__(self, name)
-
-    def __getattribute__(self, name):
-        return object.__getattribute__(self, name)
-
-    def __getitem__(self, name):
-        return object.__getattribute__(self, name)
-
-    def __setitem__(self, name, value):
-        if isinstance(value, dict) and name != '__dict__':
-            value = Data(value)
-        object.__setattr__(self, name, value)
-
-    def __setattr__(self, name, value):
-        if isinstance(value, dict) and name != '__dict__':
-            value = Data(value)
-        object.__setattr__(self, name, value)
-
-    def __repr__(self):
-        return repr(self.__dict__)
-
-    def __len__(self):
-        return len(self.__dict__)
-
-    def __iter__(self):
-        for name in self.__dict__.keys():
-            yield name
-
-    def __eq__(self, other):
-        if isinstance(other, Data):
-            return self.dict() == other.dict()
-        return self.dict() == other
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def str(self):
-        """Return a string representation of the data object.
-
-        :rtype: str
+    def _remove_debug_only(self):
+        """Iterate through each handler removing the invalid dictConfig key of
+        debug_only.
 
         """
-        return str(self.__dict__)
-
-    def dict(self):
-        """Return the data object as a dictionary, recursively casting children
-        that are Data objects as well.
-
-        :rtype: dict
-
-        """
-        output = dict()
-        for key, value in self.items():
-            if isinstance(value, Data):
-                output[key] = value.dict()
-            else:
-                output[key] = value
-        return output
-
-    def get(self, name, default=None):
-        """Return the value for key if key is in the dictionary, else default.
-        If default is not given, it defaults to None, so that this method
-        never raises a KeyError.
-
-        :param str name: The key name to return
-        :param mixed default: The default value for the key
-        :return: mixed
-
-        """
-        return self.__dict__.get(name, default)
-
-    def has_key(self, name):
-        """Test for the presence of key in the data object. has_key() is
-        deprecated in favor of key in d.
-
-        :param name:
-        :return: bool
-
-        """
-        return name in self.__dict__
-
-    def items(self):
-        """Return a copy of the dictionary's list of (key, value) pairs.
-
-        :rtype: list
-
-        """
-        return self.__dict__.items()
-
-    def itervalues(self):
-        """Return an iterator over the data values. See the note for
-        Data.items().
-
-        Using itervalues() while adding or deleting entries in the data object
-        may raise a RuntimeError or fail to iterate over all entries.
-
-        :rtype: iterator
-        :raises: RuntimeError
-
-        """
-        return self.__dict__.itervalues()
-
-    def keys(self):
-        """Return a copy of the dictionary's list of keys. See the note for
-        Data.items()
-
-        :rtype: list
-
-        """
-        return self.__dict__.keys()
-
-    def pop(self, name, default=None):
-        """If key is in the dictionary, remove it and return its value, else
-        return default. If default is not given and key is not in the
-        dictionary, a KeyError is raised.
-
-        :param str name: The key name
-        :param mixed default: The default value
-        :raises: KeyError
-
-        """
-        return self.__dict__.pop(name, default)
-
-    def setdefault(self, name, default=None):
-        """If key is in the dictionary, return its value. If not, insert key
-        with a value of default and return default. default defaults to None.
-
-        :param str name: The key
-        :param mixed default: The value
-        :return: mixed
-
-        """
-        return self.__dict__.setdefault(name, default)
-
-    def update(self, other=None, **kwargs):
-        """Update the dictionary with the key/value pairs from other,
-        overwriting existing keys. update() accepts either another dictionary
-        object or an iterable of key/value pairs (as tuples or other iterables
-        of length two). If keyword arguments are specified, the dictionary is
-        then updated with those key/value pairs: d.update(red=1, blue=2).
-
-        :param dict other: Dict or other iterable
-        :param dict kwargs: Key/value pairs to update
-        :rtype: None
-
-        """
-        self.__dict__.update(other, **kwargs)
-
-    def values(self):
-        """Return the configuration values
-
-        :rtype: list
-
-        """
-        return self.__dict__.values()
+        LOGGER.debug('Removing debug only from handlers')
+        for handler in self.config[self.HANDLERS]:
+            if self.DEBUG_ONLY in self.config[self.HANDLERS][handler]:
+                del self.config[self.HANDLERS][handler][self.DEBUG_ONLY]
