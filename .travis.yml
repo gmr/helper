@@ -12,6 +12,7 @@ env:
 install:
 - pip install awscli
 - pip install -r requires/testing.txt
+- pip install -r requires/installation.txt
 - python setup.py develop
 
 script: nosetests
