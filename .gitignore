@@ -1,9 +1,9 @@
 .DS_Store
 .idea
+.vscode
 .coverage
 *.pyc
 *.egg-info
 dist
 docs/_build
-myapp
-test.py
+env
