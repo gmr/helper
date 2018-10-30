@@ -1,4 +1,7 @@
-sudo: false
+sudo: required
+
+services:
+  - docker
 
 language: python
 
@@ -13,6 +16,8 @@ install:
   - pip install awscli
   - pip install -r requires/testing.txt
   - python setup.py develop
+
+before_script: ./bootstrap
 
 script: nosetests
 
