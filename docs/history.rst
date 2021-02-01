@@ -1,5 +1,6 @@
 Version History
 ===============
+- 2.5.0 - 2021-02-01 - Update to support Python 3.9, remove support for Python 2.6
 - 2.4.2 - 2015-11-04 - Allow for 'root' section in logging config
         - Import reduce from functools to suport Python 3
 - 2.4.1 - 2013-03-14 - Fix fchmod literal call in Python 3
