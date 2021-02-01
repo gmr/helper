@@ -267,8 +267,8 @@ class Daemon(object):
             output = stdout.read()
         except subprocess.CalledProcessError:
             return False
-        pids = [int(pid) for pid in (re.findall(r'^([0-9]+)\s',
-                                                output.decode('latin-1')))]
+        pids = [int(p) for p in
+                re.findall(r'^([0-9]+)\s', output.decode('latin-1'))]
         if os.getpid() in pids:
             pids.remove(os.getpid())
         if not pids:
