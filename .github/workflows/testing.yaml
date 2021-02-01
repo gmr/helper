@@ -1,0 +1,34 @@
+name: Testing
+on:
+  push:
+    branches: ["*"]
+    paths-ignore:
+      - 'docs/**'
+      - 'setup.*'
+      - '*.md'
+      - '*.rst'
+    tags-ignore: ["*"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    strategy:
+      matrix:
+        python: [2.7, 3.7, 3.8, 3.9]
+    container:
+      image: python:${{ matrix.python }}-alpine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install OS dependencies
+        run: apk --update add gcc make musl-dev linux-headers
+
+      - name: Install testing dependencies
+        run: pip3 --no-cache-dir install -e '.[testing]'
+
+      - name: Run flake8 tests
+        run: flake8
+
+      - name: Run tests
+        run: env/bin/python -m unittest -v tests/test_*.py
