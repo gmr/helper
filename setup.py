@@ -42,7 +42,7 @@ setuptools.setup(
     package_data={'': ['LICENSE', 'README.rst']},
     install_requires=['pyyaml'],
     extras_require={
-        'testing': ['coverage', 'flake8', 'mock', 'unittest2']
+        'testing': ['flake8', 'mock']
     },
     zip_safe=True,
     entry_points={

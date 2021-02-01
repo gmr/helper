@@ -1,7 +1,4 @@
-try:
-    import unittest2 as unittest
-except ImportError:
-    import unittest
+import unittest
 
 import mock
 
@@ -42,10 +39,10 @@ class RunCommandTests(PatchedTestMixin, unittest.TestCase):
         self.assertHasAttribute(helper.setupext.RunCommand, 'description')
 
     def test_user_options(self):
-        self.assertEquals(helper.setupext.RunCommand.user_options[0],
-                          ('configuration=', 'c', mock.ANY))
-        self.assertEquals(helper.setupext.RunCommand.user_options[1],
-                          ('controller=', 'C', mock.ANY))
+        self.assertEqual(helper.setupext.RunCommand.user_options[0],
+                         ('configuration=', 'c', mock.ANY))
+        self.assertEqual(helper.setupext.RunCommand.user_options[1],
+                         ('controller=', 'C', mock.ANY))
 
     def test_initialize_options(self):
         self.command.initialize_options()
