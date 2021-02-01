@@ -5,19 +5,16 @@ format and providing sane defaults for parts that don't have any.
 """
 import json
 import logging
-from os import path
-import platform
 import sys
 import yaml
-
-from helper import NullHandler
-
-(major, minor, rev) = platform.python_version_tuple()
-if float('%s.%s' % (major, minor)) < 2.7:
-    import logutils.dictconfig as logging_config
-else:
-    from logging import config as logging_config
-
+from logging import config as logging_config
+from os import path
+try:
+    from logging.handlers import NullHandler
+except ImportError:
+    class NullHandler(logging.Handler):
+        def emit(self, record):
+            pass
 
 LOGGER = logging.getLogger(__name__)
 
@@ -212,7 +209,7 @@ class LoggingConfig(object):
         """
         # Force a NullLogger for some libraries that require it
         root_logger = logging.getLogger()
-        root_logger.addHandler(NullHandler())
+        root_logger.addHandler(logging.NullHandler())
 
         self.config = configuration
         self.debug = debug

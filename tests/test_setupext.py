@@ -59,7 +59,6 @@ class RunCommandTests(PatchedTestMixin, unittest.TestCase):
         self.assertFalse(finalize_options.called)
 
 
-
 class RunCommandRunTests(PatchedTestMixin, unittest.TestCase):
 
     def setUp(self):

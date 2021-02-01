@@ -11,7 +11,6 @@ from os import path
 import platform
 import pwd
 import re
-import stat
 import subprocess
 import sys
 import traceback
@@ -33,11 +32,7 @@ def operating_system():
     """
     if platform.system() == 'Darwin':
         return 'OS X Version %s' % platform.mac_ver()[0]
-    distribution = ' '.join(platform.linux_distribution()).strip()
-    os_platform = platform.platform(True, True)
-    if distribution:
-        os_platform += ' (%s)' % distribution
-    return os_platform
+    return platform.platform(True, True)
 
 
 class Daemon(object):
@@ -106,8 +101,8 @@ class Daemon(object):
                     handle.write('Exception: %s\n' % error)
                     handle.write('Traceback:\n')
                     output = traceback.format_exception(*sys.exc_info())
-                    _dev_null = [(handle.write(line),
-                                 sys.stdout.write(line)) for line in output]
+                    [(handle.write(line), sys.stdout.write(line))
+                     for line in output]
                     handle.write('{:->80}\n'.format(' [END]'))
                     handle.flush()
                 sys.stderr.write('\nException log: %s\n\n' % exception_log)
@@ -158,9 +153,9 @@ class Daemon(object):
         try:
             pid = os.fork()
             if pid > 0:
-                    sys.exit(0)
+                sys.exit(0)
         except OSError as error:
-                raise OSError('Could not fork off parent: %s', error)
+            raise OSError('Could not fork off parent: %s', error)
 
         # Set the user id
         if self.uid != os.getuid():

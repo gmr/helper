@@ -340,7 +340,8 @@ class Controller(object):
 
     def shutdown(self):
         """Override to provide any required shutdown steps."""
-        LOGGER.debug('Unextended %s.shutdown() method', self.__class__.__name__)
+        LOGGER.debug(
+            'Unextended %s.shutdown() method', self.__class__.__name__)
 
     def stop(self):
         """Override to implement shutdown steps."""

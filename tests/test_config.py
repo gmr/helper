@@ -20,4 +20,3 @@ class ConfigDefaultTests(unittest.TestCase):
 
     def test_logging(self):
         self.assertDictEqual(self.config.logging, config.Config.LOGGING)
-
