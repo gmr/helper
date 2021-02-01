@@ -41,6 +41,7 @@ setuptools.setup(
     packages=['helper'],
     package_data={'': ['LICENSE', 'README.rst']},
     install_requires=['pyyaml'],
+    include_package_data=True,
     extras_require={
         'testing': ['flake8', 'mock']
     },
