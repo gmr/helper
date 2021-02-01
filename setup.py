@@ -31,9 +31,8 @@ setuptools.setup(
         'Programming Language :: Python :: Implementation :: PyPy',
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules'],
-    description=('Development library for quickly writing configurable '
-                 'applications and daemons'),
-    long_description=open('README.rst').read(),
+    description='Development library for quickly writing configurable '
+                'applications and daemons',
     license=open('LICENSE').read(),
     author='Gavin M. Roy',
     author_email='gavinmroy@gmail.com',
