@@ -31,4 +31,4 @@ jobs:
         run: flake8
 
       - name: Run tests
-        run: env/bin/python -m unittest -v tests/test_*.py
+        run: python -m unittest -v tests/test_*.py
