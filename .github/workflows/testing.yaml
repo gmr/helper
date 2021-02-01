@@ -25,7 +25,7 @@ jobs:
         run: apk --update add gcc make musl-dev linux-headers
 
       - name: Install testing dependencies
-        run: pip3 --no-cache-dir install -e '.[testing]'
+        run: pip --no-cache-dir install -e '.[testing]'
 
       - name: Run flake8 tests
         run: flake8
